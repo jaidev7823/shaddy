@@ -1,0 +1,22 @@
+[
+  {
+    "id": "think_before_speak",
+    "topic": "Think before Speak",
+    "keywords": [
+      "hey",
+      "kais",
+      "kon bola",
+      "what do you think"
+    ],
+    "nudge": "think"
+  },
+  {
+    "id": "talk_in_english",
+    "topic": "talk in english",
+    "keywords": [
+      "hi",
+      "hello"
+    ],
+    "nudge": "talk in english"
+  }
+]

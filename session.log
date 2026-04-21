@@ -1,0 +1,25 @@
+{"time": "2026-04-21T11:08:33.846445", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T11:11:27.537402", "event": "transcript", "text": "Don't make that one for me, I don't.", "latency_ms": 173}
+{"time": "2026-04-21T11:11:43.229337", "event": "transcript", "text": "What do you think?", "latency_ms": 173}
+{"time": "2026-04-21T11:11:53.605933", "event": "transcript", "text": "make sure", "latency_ms": 181}
+{"time": "2026-04-21T11:11:55.006727", "event": "session_end"}
+{"time": "2026-04-21T11:34:54.123595", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T11:35:44.168487", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T11:35:47.818327", "event": "transcript", "text": "What do you think?", "latency_ms": 201}
+{"time": "2026-04-21T11:35:55.295892", "event": "transcript", "text": "Thank you.", "latency_ms": 171}
+{"time": "2026-04-21T11:37:57.843587", "event": "session_end"}
+{"time": "2026-04-21T11:46:26.388429", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T11:46:39.015869", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T11:49:03.009392", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T11:51:49.420699", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T11:55:05.544071", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T12:18:12.308999", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T12:27:43.793260", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T12:28:17.481880", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T12:29:04.899393", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T12:31:10.849669", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T12:31:28.761459", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T12:31:52.732808", "event": "session_start", "lessons": ["think_before_speak"]}
+{"time": "2026-04-21T12:34:40.230388", "event": "session_start", "lessons": ["think_before_speak"]}
+{"t": "2026-04-21T12:40:24.737204", "lesson": "think_before_speak", "heard": "what do you think?"}
+{"t": "2026-04-21T13:05:16.651250", "lesson": "talk_in_english", "heard": "hello"}
