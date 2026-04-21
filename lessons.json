@@ -1,22 +1,18 @@
 [
-  {
-    "id": "think_before_speak",
-    "topic": "Think before Speak",
-    "keywords": [
-      "hey",
-      "kais",
-      "kon bola",
-      "what do you think"
-    ],
-    "nudge": "think"
-  },
-  {
-    "id": "talk_in_english",
-    "topic": "talk in english",
-    "keywords": [
-      "hi",
-      "hello"
-    ],
-    "nudge": "talk in english"
-  }
+{
+  "id": "speak_english",
+  "topic": "Reply in English",
+  "keywords": [
+    "what do you think",
+    "what does it",
+    "what are you",
+    "how are you",
+    "tell me",
+    "what happened",
+    "why",
+    "how",
+    "what"
+  ],
+  "nudge": "reply in english"
+}
 ]

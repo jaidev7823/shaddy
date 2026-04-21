@@ -23,3 +23,13 @@
 {"time": "2026-04-21T12:34:40.230388", "event": "session_start", "lessons": ["think_before_speak"]}
 {"t": "2026-04-21T12:40:24.737204", "lesson": "think_before_speak", "heard": "what do you think?"}
 {"t": "2026-04-21T13:05:16.651250", "lesson": "talk_in_english", "heard": "hello"}
+{"t": "2026-04-21T17:03:54.237203", "lesson": "talk_in_english", "heard": "hello"}
+{"t": "2026-04-21T17:04:29.685190", "lesson": "talk_in_english", "heard": "hello."}
+{"t": "2026-04-21T17:27:07.359863", "lesson": "think_before_speak", "heard": "\u0915\u094d\u092f\u093e \u0932\u0917\u0924\u093e \u0939\u0948\u0964"}
+{"t": "2026-04-21T17:29:15.798301", "lesson": "think_before_speak", "heard": "what do you think?"}
+{"t": "2026-04-21T17:29:15.798608", "lesson": "talk_in_english", "heard": "what do you think?"}
+{"t": "2026-04-21T17:30:05.422660", "lesson": "think_before_speak", "heard": "how?"}
+{"t": "2026-04-21T17:30:15.946163", "lesson": "think_before_speak", "heard": "what do you think?"}
+{"t": "2026-04-21T17:30:15.946412", "lesson": "talk_in_english", "heard": "what do you think?"}
+{"t": "2026-04-21T17:31:59.412068", "lesson": "speak_english", "heard": "and how is it?"}
+{"t": "2026-04-21T17:37:19.381348", "lesson": "speak_english", "heard": "why don't you get a call from me?"}

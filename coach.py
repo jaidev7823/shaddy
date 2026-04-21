@@ -6,17 +6,17 @@ from faster_whisper import WhisperModel
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MIC_SAMPLE_RATE = 44100       # change if your mic differs
+MIC_SAMPLE_RATE = 16000       # change if your mic differs
 VAD_RATE        = 16000       # webrtcvad needs 16k
 FRAME_MS        = 30          # 10/20/30 only
 FRAME_BYTES     = int(VAD_RATE * FRAME_MS / 1000) * 2
-COOLDOWN        = 30          # seconds before same nudge repeats
+COOLDOWN        = 5          # seconds before same nudge repeats
 DOWNSAMPLE      = MIC_SAMPLE_RATE // VAD_RATE  # 44100//16000 = 2
 # ─────────────────────────────────────────────────────────────────────────────
 
 BASE    = Path(__file__).parent
 lessons = json.loads((BASE / "lessons.json").read_text())
-model   = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+model = WhisperModel("medium", device="cpu", compute_type="int8")
 cooldowns = {}
 
 def play(lesson_id):
@@ -32,29 +32,37 @@ def prebake():
             subprocess.run(["espeak-ng", "-w", str(out), "-s", "130", "-p", "40", l["nudge"]])
 
 def on_speech(audio: bytes):
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        with wave.open(f, "wb") as w:
-            w.setnchannels(1); w.setsampwidth(2); w.setframerate(MIC_SAMPLE_RATE)
-            w.writeframes(audio)
-        tmp = f.name
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            with wave.open(f, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(MIC_SAMPLE_RATE)
+                w.writeframes(audio)
+            tmp = f.name
 
-    segs, _ = model.transcribe(tmp, language="en", vad_filter=True)
-    text = " ".join(s.text for s in segs).strip().lower()
-    os.unlink(tmp)
-    if not text: return
+        # Add language="en" (or your lang) to bypass the failing auto-detection
+        segs, info = model.transcribe(tmp, language="hi", vad_filter=True, task="translate")
+        
+        text = " ".join(s.text for s in segs).strip().lower()
+        os.unlink(tmp)
+        
+        if not text: return
+        print(f"  \"{text}\"")
 
-    print(f"  \"{text}\"")
-
-    now = time.time()
-    for l in lessons:
-        if now - cooldowns.get(l["id"], 0) < COOLDOWN: continue
-        if any(kw.lower() in text for kw in l["keywords"]):
-            print(f"  → {l['nudge']}")
-            play(l["id"])
-            cooldowns[l["id"]] = now
-            with open(BASE / "session.log", "a") as f:
-                f.write(json.dumps({"t": datetime.datetime.now().isoformat(),
-                                    "lesson": l["id"], "heard": text}) + "\n")
+        now = time.time()
+        for l in lessons:
+            if now - cooldowns.get(l["id"], 0) < COOLDOWN: continue
+            if any(kw.lower() in text for kw in l["keywords"]):
+                print(f"  → {l['nudge']}")
+                play(l["id"])
+                cooldowns[l["id"]] = now
+                with open(BASE / "session.log", "a") as f:
+                    f.write(json.dumps({"t": datetime.datetime.now().isoformat(),
+                        "lesson": l["id"], "heard": text}) + "\n")
+    except Exception as e:
+        print(f"Transcription error: {e}")
+        if os.path.exists(tmp): os.unlink(tmp)
 
 def main():
     prebake()
@@ -80,7 +88,7 @@ def main():
             elif active:
                 buf.append(raw); silence += 1
                 if silence > 500 // FRAME_MS:
-                    if speech > 8:
+                    if speech > 5:
                         chunk = b"".join(buf)
                         threading.Thread(target=on_speech, args=(chunk,), daemon=True).start()
                     buf, speech, silence, active = [], 0, 0, False
