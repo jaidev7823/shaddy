@@ -1,18 +1,18 @@
 [
-{
-  "id": "speak_english",
-  "topic": "Reply in English",
-  "keywords": [
-    "what do you think",
-    "what does it",
-    "what are you",
-    "how are you",
-    "tell me",
-    "what happened",
-    "why",
-    "how",
-    "what"
-  ],
-  "nudge": "reply in english"
-}
+  {
+    "id": "speak_english",
+    "topic": "Reply in English",
+    "keywords": [
+      "what do you think",
+      "what does it",
+      "what are you",
+      "how are you",
+      "tell me",
+      "what happened",
+      "why",
+      "how",
+      "what"
+    ],
+    "nudge": "reply in english"
+  }
 ]
