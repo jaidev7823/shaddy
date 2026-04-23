@@ -10,9 +10,9 @@ VAD_RATE        = 16000
 FRAME_MS        = 30
 FRAME_BYTES     = int(VAD_RATE * FRAME_MS / 1000) * 2
 
-MIN_SPEECH_FRAMES = 20        # ~240ms
+MIN_SPEECH_FRAMES = 10        # ~240ms
 MIN_SILENCE_FRAMES = 6       # ~180ms
-ENERGY_THRESHOLD = 700       # tune based on your mic
+ENERGY_THRESHOLD = 400       # tune based on your mic
 COOLDOWN = 3.0               # seconds
 
 PAUSE_TARGET_MIN = 1.0
@@ -49,7 +49,7 @@ def log_event(delay):
     print(f"→ Delay: {delay:.2f}s ({label})")
 
 def main():
-    vad = webrtcvad.Vad(2)
+    vad = webrtcvad.Vad(1)
     pa  = pyaudio.PyAudio()
 
     stream = pa.open(
