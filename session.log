@@ -448,3 +448,5 @@
 {"t": "2026-04-22T19:34:32.125387", "delay": 7.81, "label": "too_slow"}
 {"t": "2026-04-23T12:10:29.871065", "lesson": "speak_english", "heard": "what's my name?"}
 {"t": "2026-04-23T12:36:34.979037", "delay": 27.81, "label": "too_slow"}
+{"t": "2026-04-23T12:42:29.128050", "delay": 58.15, "label": "too_slow"}
+{"t": "2026-04-23T12:44:13.577086", "delay": 104.02, "label": "too_slow"}
