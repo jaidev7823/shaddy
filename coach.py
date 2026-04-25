@@ -60,6 +60,7 @@ def on_speech(audio: bytes):
                 with open(BASE / "session.log", "a") as f:
                     f.write(json.dumps({"t": datetime.datetime.now().isoformat(),
                         "lesson": l["id"], "heard": text}) + "\n")
+
     except Exception as e:
         print(f"Transcription error: {e}")
         if os.path.exists(tmp): os.unlink(tmp)
