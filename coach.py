@@ -13,7 +13,7 @@ BASE    = Path(__file__).parent
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 tts_model = ChatterboxTurboTTS.from_pretrained(device=DEVICE)
-VOICE_REF = str(BASE / "L_bg_theme.wav")  # provide your voice sample
+VOICE_REF = str(BASE / "L_voice_sample.wav")  # provide your voice sample
 
 # ── Config ────────────────────────────────────────────────────────────────────
 MIC_SAMPLE_RATE = 16000       # change if your mic differs
