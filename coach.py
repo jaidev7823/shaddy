@@ -7,6 +7,7 @@ import requests
 import torch
 import soundfile as sf
 from chatterbox.tts_turbo import ChatterboxTurboTTS
+from system_prompt import build_prompt
 
 BASE    = Path(__file__).parent
 
@@ -88,13 +89,7 @@ def on_speech(audio: bytes):
                 continue
 
             if any(kw.lower() in text for kw in l["keywords"]):
-                prompt = f"""
-                User said: "{text}"
-
-                Respond with a short helpful nudge (1 sentence max).
-                Context: {l['nudge']}
-                """
-
+                prompt = build_prompt(text, l["nudge"])
                 response = ask_llm(prompt)
 
                 print(f"  → {response}")
