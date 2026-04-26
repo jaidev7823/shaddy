@@ -5,6 +5,8 @@ from faster_whisper import WhisperModel
 from pathlib import Path
 import requests
 import torch
+print("CUDA available:", torch.cuda.is_available())
+print("GPU:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "None")
 import soundfile as sf
 from chatterbox.tts_turbo import ChatterboxTurboTTS
 from system_prompt import build_prompt
@@ -13,7 +15,7 @@ BASE    = Path(__file__).parent
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 tts_model = ChatterboxTurboTTS.from_pretrained(device=DEVICE)
-VOICE_REF = str(BASE / "L_voice_sample.wav")  # provide your voice sample
+VOICE_REF = str(BASE / "l_voice_sample.wav")  # provide your voice sample
 
 # ── Config ────────────────────────────────────────────────────────────────────
 MIC_SAMPLE_RATE = 16000       # change if your mic differs
@@ -25,14 +27,18 @@ DOWNSAMPLE      = MIC_SAMPLE_RATE // VAD_RATE  # 44100//16000 = 2
 # ─────────────────────────────────────────────────────────────────────────────
 
 lessons = json.loads((BASE / "lessons.json").read_text())
-model = WhisperModel("medium", device="cpu", compute_type="int8")
+model = WhisperModel(
+    "medium",
+    device="cuda",
+    compute_type="float16"  # or "int8_float16" for lower VRAM
+)
 cooldowns = {}
 
 def ask_llm(prompt: str) -> str:
     r = requests.post(
         "http://localhost:11434/api/generate",
         json={
-            "model": "tinyllama:latest",
+            "model": "gemma4:latest",
             "prompt": prompt,
             "stream": False
         }
@@ -85,11 +91,13 @@ def on_speech(audio: bytes):
 
         now = time.time()
         for l in lessons:
+
             if now - cooldowns.get(l["id"], 0) < COOLDOWN:
                 continue
 
             if any(kw.lower() in text for kw in l["keywords"]):
                 prompt = build_prompt(text, l["nudge"])
+                print("prompt",prompt)
                 response = ask_llm(prompt)
 
                 print(f"  → {response}")
@@ -103,7 +111,7 @@ def on_speech(audio: bytes):
 
 def main():
     # prebake()
-    vad = webrtcvad.Vad(2)
+    vad = webrtcvad.Vad(3)
     pa  = pyaudio.PyAudio()
 
     stream = pa.open(format=pyaudio.paInt16, channels=1, rate=MIC_SAMPLE_RATE,
@@ -124,8 +132,8 @@ def main():
                 buf.append(raw); speech += 1; silence = 0; active = True
             elif active:
                 buf.append(raw); silence += 1
-                if silence > 500 // FRAME_MS:
-                    if speech > 5:
+                if silence > 300 // FRAME_MS:
+                    if speech > 12:
                         chunk = b"".join(buf)
                         threading.Thread(target=on_speech, args=(chunk,), daemon=True).start()
                     buf, speech, silence, active = [], 0, 0, False
