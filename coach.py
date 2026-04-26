@@ -4,6 +4,14 @@ import numpy as np
 import pyaudio, webrtcvad
 from faster_whisper import WhisperModel
 from pathlib import Path
+import requests
+import torch
+import soundfile as sf
+from chatterbox.tts_turbo import ChatterboxTurboTTS
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+tts_model = ChatterboxTurboTTS.from_pretrained(device=DEVICE)
+VOICE_REF = str(BASE / "voice_ref.wav")  # provide your voice sample
 
 # ── Config ────────────────────────────────────────────────────────────────────
 MIC_SAMPLE_RATE = 16000       # change if your mic differs
@@ -19,17 +27,47 @@ lessons = json.loads((BASE / "lessons.json").read_text())
 model = WhisperModel("medium", device="cpu", compute_type="int8")
 cooldowns = {}
 
-def play(lesson_id):
-    wav = BASE / "nudges" / f"{lesson_id}.wav"
-    if wav.exists():
-        subprocess.Popen(["aplay", "-q", str(wav)])
+def ask_llm(prompt: str) -> str:
+    r = requests.post(
+        "http://localhost:11434/api/generate",
+        json={
+            "model": "gemma:4b",
+            "prompt": prompt,
+            "stream": False
+        }
+    )
+    return r.json()["response"].strip()
 
-def prebake():
-    (BASE / "nudges").mkdir(exist_ok=True)
-    for l in lessons:
-        out = BASE / "nudges" / f"{l['id']}.wav"
-        if not out.exists():
-            subprocess.run(["espeak-ng", "-w", str(out), "-s", "130", "-p", "40", l["nudge"]])
+def generate_and_play(text: str):
+    try:
+        with torch.no_grad():
+            wav = tts_model.generate(text, audio_prompt_path=VOICE_REF)
+
+        wav = wav.detach().cpu().contiguous()
+
+        out_path = BASE / "generated.wav"
+
+        sf.write(
+            str(out_path),
+            wav.squeeze().numpy(),
+            tts_model.sr
+        )
+
+        subprocess.Popen(["aplay", "-q", str(out_path)])
+
+        del wav
+        if DEVICE == "cuda":
+            torch.cuda.empty_cache()
+
+    except Exception as e:
+        print(f"TTS error: {e}")
+
+# def prebake():
+#     (BASE / "nudges").mkdir(exist_ok=True)
+#     for l in lessons:
+#         out = BASE / "nudges" / f"{l['id']}.wav"
+#         if not out.exists():
+#             subprocess.run(["espeak-ng", "-w", str(out), "-s", "130", "-p", "40", l["nudge"]])
 
 def on_speech(audio: bytes):
     try:
@@ -53,20 +91,27 @@ def on_speech(audio: bytes):
         now = time.time()
         for l in lessons:
             if now - cooldowns.get(l["id"], 0) < COOLDOWN: continue
-            if any(kw.lower() in text for kw in l["keywords"]):
-                print(f"  → {l['nudge']}")
-                play(l["id"])
-                cooldowns[l["id"]] = now
-                with open(BASE / "session.log", "a") as f:
-                    f.write(json.dumps({"t": datetime.datetime.now().isoformat(),
-                        "lesson": l["id"], "heard": text}) + "\n")
+                if any(kw.lower() in text for kw in l["keywords"]):
+                    prompt = f"""
+                            User said: "{text}"
 
+                            Respond with a short helpful nudge (1 sentence max).
+                            Context: {l['nudge']}
+                                """
+
+                    response = ask_llm(prompt)
+
+                    print(f"  → {response}")
+                    generate_and_play(response)
+
+                    cooldowns[l["id"]] = now
+                    
     except Exception as e:
         print(f"Transcription error: {e}")
         if os.path.exists(tmp): os.unlink(tmp)
 
 def main():
-    prebake()
+    # prebake()
     vad = webrtcvad.Vad(2)
     pa  = pyaudio.PyAudio()
 
