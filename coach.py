@@ -14,7 +14,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ── Models ────────────────────────────────────────────────────────────────────
 tts_model = ChatterboxTurboTTS.from_pretrained(device=DEVICE)
-whisper   = WhisperModel("medium", device="cuda", compute_type="float16")
+whisper = WhisperModel("medium", device="cuda", compute_type="float16")
 VOICE_REF = str(BASE / "l_voice_sample.wav")
 
 # ── Audio config ──────────────────────────────────────────────────────────────
@@ -37,28 +37,28 @@ audio_queue = Queue(maxsize=1)  # maxsize=1 drops stale audio if worker is busy
 # ── Prompt ───────────────────────────────────────────────────────────────────
 def build_prompt(transcript: str) -> str:
     topics = "\n".join(f'{l["id"]}: {l["topic"]}' for l in lessons)
-    return f"""### Role: English Teacher
-The student is a beginner. Provide a direct sentence for them to repeat.
+    return f"""
+### Role: Expert English as a Second Language (ESL) Teacher
+The student is a beginner-level learner. Your goal is to provide immediate, actionable feedback based on their real-time conversation.
 
-### Topics:
+### Available Curriculum (Topics):
 {topics}
 
-### Input:
-"{transcript}"
+### Interaction Rules:
+1. **Be Direct:** The student needs to know exactly what to say next.
+2. **Grammar Mapping:** Match the student's input to the most relevant `lesson_id` from the list above.
+3. **Strict Formatting:** You must output ONLY valid JSON. No conversational filler before or after the JSON block.
 
 ### Task:
-If the input allows for a grammar-based reply, provide:
-1. A direct answer (the sentence they should say).
-2. The lesson_id.
-3. A 3-word grammar concept.
+Analyze the student's input: "{transcript}"
 
-If no specific grammar applies, still provide a simple "answer" so the student isn't left in silence.
+1. **Answer:** Provide a natural, grammatically correct sentence for the student to repeat with concept this sentence cover and why.
+2. **lesson_id:** Select the most appropriate ID from the provided Topics. Use "GEN-01" if no specific lesson applies.
 
-### JSON Format:
+### Output JSON Format:
 {{
-  "lesson_id": "L101",
-  "answer": "Yes, I am happy.",
-  "concept": "Present Tense"
+  "lesson_id": "string",
+  "answer": "string",
 }}"""
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
@@ -67,27 +67,34 @@ def ask_llm(transcript: str) -> dict:
         r = requests.post(
             "http://localhost:11434/api/generate",
             json={
-                "model": "qwen2:0.5b",
+                "model": "gemma4:latest",
                 "prompt": build_prompt(transcript),
                 "format": "json",
-                "stream": False
+                "stream": False,
+                "options": {"temperature": 0.1} # Keep it predictable
             },
-            timeout=15
+            timeout=30 # Lower timeout to prevent long hangs
         )
-        data = json.loads(r.json()["response"])
+        data = r.json().get("response", "{}")
+        parsed = json.loads(data)
         
-        # If there is an answer, we SHOULD nudge/speak
-        answer = data.get("answer", "")
-        should_nudge = len(answer) > 2
+        nudge = parsed.get("answer", "")
+        # concept = parsed.get("concept", "")
+        # why = parsed.get("why", "")
+
+        # If model says "NONE" or nudge is empty, don't speak
+        should_nudge = bool(nudge and nudge.upper() != "NONE" and len(nudge) > 2)
         
         return {
             "should_nudge": should_nudge,
-            "lesson_id": data.get("lesson_id"),
-            "answer": answer,
-            "concept": data.get("concept", "English Basics")
+            "lesson_id": parsed.get("lesson_id"),
+            "nudge": nudge,
+            # "concept": concept,
+            # "why": why
         }
-    except Exception:
-        return {"should_nudge": False}
+    except Exception as e:
+        print(f"  LLM Error: {e}")
+        return {"should_nudge": False, "lesson_id": None, "nudge": None}
 
 # ── TTS ───────────────────────────────────────────────────────────────────────
 def generate_and_play(text: str):
@@ -118,12 +125,28 @@ def worker():
             # 1. Write wav
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 with wave.open(f, "wb") as w:
-                    w.setnchannels(1); w.setsampwidth(2)
-                    w.setframerate(MIC_RATE); w.writeframes(audio)
+                    w.setnchannels(1)
+                    w.setsampwidth(2)
+                    w.setframerate(MIC_RATE)
+                    w.writeframes(audio)
                 tmp = f.name
 
-            # 2. Transcribe
-            segs, _ = whisper.transcribe(tmp, language="hi", vad_filter=True, task="translate")
+            # 2. Transcribe (Optimized for Hindi + Accuracy)
+            segs, info = whisper.transcribe(
+                tmp,
+                language="en",
+                task="translate",
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+
+                # --- ACCURACY TWEAKS ---
+                temperature=0.0,
+                beam_size=5,
+                # --- NOISE FILTER ---
+                no_speech_threshold=0.6,
+                compression_ratio_threshold=2.4
+            )
+
             text = " ".join(s.text for s in segs).strip()
             os.unlink(tmp); tmp = None
 
