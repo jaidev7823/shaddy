@@ -4,8 +4,7 @@ import numpy as np
 import pyaudio
 import webrtcvad
 
-from worker import worker, get_queue
-from config import MIC_RATE, FRAME_MS, DOWNSAMPLE, FRAME_BYTES
+from config import MIC_RATE, FRAME_MS, DOWNSAMPLE, FRAME_BYTES, VAD_RATE
 from worker import worker, get_queue
 
 
