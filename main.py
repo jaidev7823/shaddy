@@ -1,87 +1,56 @@
-#!/usr/bin/env python3
-import json, subprocess
-from pathlib import Path
-from datetime import datetime
-from collections import Counter
+import threading
 
-BASE = Path(__file__).parent
-LOG = BASE / "session.log"
-LESSONS = BASE / "lessons.json"
+import numpy as np
+import pyaudio
+import webrtcvad
 
-def today_events():
-    if not LOG.exists():
-        exit("No session log found.")
+from worker import worker, get_queue
+from config import MIC_RATE, FRAME_MS, DOWNSAMPLE, FRAME_BYTES
+from worker import worker, get_queue
 
-    today = datetime.now().date()
-    out = []
-    for line in LOG.read_text().splitlines():
-        try:
-            e = json.loads(line)
-            if datetime.fromisoformat(e["time"]).date() == today:
-                out.append(e)
-        except:
-            pass
-    return out
-
-def summarize(events):
-    t = [e["text"] for e in events if e["event"] == "transcript"]
-    n = [e for e in events if e["event"] == "nudge_triggered"]
-    return {
-        "sessions": sum(e["event"] == "session_start" for e in events),
-        "utterances": len(t),
-        "nudges": len(n),
-        "breakdown": Counter(x["lesson_id"] for x in n),
-        "moments": [{"lesson": x["lesson_id"], "when": x["transcript"]} for x in n][:5],
-        "samples": t[:8],
-    }
-
-def ollama(prompt, model="mistral"):
-    try:
-        r = subprocess.run(["ollama", "run", model],
-                           input=prompt, text=True,
-                           capture_output=True, timeout=120)
-        return r.stdout.strip()
-    except Exception as e:
-        return f"[ollama error: {e}]"
 
 def main():
-    ev = today_events()
-    if not ev:
-        return print("No events today.")
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
 
-    s = summarize(ev)
-    lessons = {l["id"]: l["topic"] for l in json.loads(LESSONS.read_text())}
+    vad = webrtcvad.Vad(3)
+    pa = pyaudio.PyAudio()
+    stream = pa.open(
+        format=pyaudio.paInt16, channels=1,
+        rate=MIC_RATE, input=True,
+        frames_per_buffer=int(MIC_RATE * FRAME_MS / 1000)
+    )
+    print("Listening... (Ctrl+C to stop)")
 
-    print(f"\nSessions: {s['sessions']}")
-    print(f"Utterances: {s['utterances']}")
-    print(f"Nudges: {s['nudges']}")
+    buf, speech, silence, active = [], 0, 0, False
+    audio_queue = get_queue()
+    try:
+        while True:
+            raw = stream.read(int(MIC_RATE * FRAME_MS / 1000), exception_on_overflow=False)
+            arr = np.frombuffer(raw, dtype=np.int16)
+            arr16 = arr[::DOWNSAMPLE].astype(np.int16)
+            r16 = arr16.tobytes()[:FRAME_BYTES].ljust(FRAME_BYTES, b'\x00')
 
-    if s["breakdown"]:
-        print("\nBreakdown:")
-        for k,v in s["breakdown"].items():
-            print(f"  {lessons.get(k,k)}: {v}")
+            if vad.is_speech(r16, VAD_RATE):
+                buf.append(raw); speech += 1; silence = 0; active = True
+            elif active:
+                buf.append(raw); silence += 1
+                if silence > 300 // FRAME_MS:
+                    if speech > 12:
+                        chunk = b"".join(buf)
+                        try:
+                            audio_queue.put_nowait(chunk)
+                        except:
+                            print("  (busy, dropped chunk)")
+                    buf, speech, silence, active = [], 0, 0, False
 
-    if s["moments"]:
-        print("\nMoments:")
-        for m in s["moments"]:
-            print(f"  [{lessons.get(m['lesson'], m['lesson'])}] {m['when'][:80]}")
+    except KeyboardInterrupt:
+        print("\nDone.")
+    finally:
+        stream.stop_stream()
+        stream.close()
+        pa.terminate()
 
-    prompt = f"""Review this session briefly.
-
-Stats: {s['utterances']} utterances, {s['nudges']} nudges
-Lessons: {list(lessons.values())}
-Moments: {json.dumps(s['moments'], indent=2)}
-Samples: {json.dumps(s['samples'], indent=2)}
-
-Give:
-- patterns
-- one strength
-- one focus
-- 3-item checklist"""
-
-    print("\n--- AI Review ---\n")
-    print(ollama(prompt))
-    print(f"\nLog: {LOG}")
 
 if __name__ == "__main__":
     main()
