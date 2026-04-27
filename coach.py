@@ -8,6 +8,24 @@ import torch
 import soundfile as sf
 from chatterbox.tts_turbo import ChatterboxTurboTTS
 from queue import Queue, Empty
+from google import genai
+from pydantic import BaseModel
+import os
+from dotenv import load_dotenv
+
+# This looks for the .env file and loads it into os.environ
+load_dotenv()
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY environment variable is not set")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+class ESLResponse(BaseModel):
+    lesson_id: str
+    answer: str
+    hint: str
 
 BASE   = Path(__file__).parent
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -35,65 +53,79 @@ cooldowns = {}
 audio_queue = Queue(maxsize=1)  # maxsize=1 drops stale audio if worker is busy
 
 # ── Prompt ───────────────────────────────────────────────────────────────────
-def build_prompt(transcript: str) -> str:
+def build_prompt(transcript: str, speaker: str = "student") -> str:
+    # speaker = "student" → student said this, correct it
+    # speaker = "other"   → other person said this, help student reply
     topics = "\n".join(f'{l["id"]}: {l["topic"]}' for l in lessons)
-    return f"""
-### Role: Expert English as a Second Language (ESL) Teacher
-The student is a beginner-level learner. Your goal is to provide immediate, actionable feedback based on their real-time conversation.
 
-### Available Curriculum (Topics):
+    if speaker == "student":
+        situation = f"""The student just said this to their conversation partner:
+"{transcript}"
+Your job: Rewrite it as a more natural, fluent English sentence they can say right now."""
+
+    else:  # speaker == "other"
+        situation = f"""The other person just said this TO the student:
+"{transcript}"
+The student needs to reply. Your job: Give the student a natural, fluent English response they can say right now."""
+
+    return f"""
+### MISSION
+You are a "Shadow Assistant" for an ESL student. You are silently observing their conversation.
+
+### THE SITUATION
+- You are NOT part of the conversation.
+- Do NOT respond to the meaning for yourself.
+- Your ONLY job: give the student the next sentence to speak.
+
+### AVAILABLE TOPICS
 {topics}
 
-### Interaction Rules:
-1. **Be Direct:** The student needs to know exactly what to say next.
-2. **Grammar Mapping:** Match the student's input to the most relevant `lesson_id` from the list above.
-3. **Strict Formatting:** You must output ONLY valid JSON. No conversational filler before or after the JSON block.
+### CURRENT MOMENT
+{situation}
 
-### Task:
-Analyze the student's input: "{transcript}"
+### YOUR TASK
+1. **answer** — A natural English sentence the student can immediately say aloud. No explanations. No grammar terms.
+2. **hint** — One short phrase (max 8 words) naming the grammar concept. Example: "Uses simple past for completed actions."
+3. **lesson_id** — Most relevant topic ID. Use "GEN-01" if none fit.
 
-1. **Answer:** Provide a natural, grammatically correct sentence for the student to repeat with concept this sentence cover and why.
-2. **lesson_id:** Select the most appropriate ID from the provided Topics. Use "GEN-01" if no specific lesson applies.
+### STRICT RULES
+- "answer" is always something the student SPEAKS to their partner.
+- "answer" NEVER contains grammar notes, brackets, or meta-comments.
+- "hint" is one concept label only.
 
-### Output JSON Format:
+### OUTPUT — valid JSON only:
 {{
   "lesson_id": "string",
   "answer": "string",
+  "hint": "string"
 }}"""
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
-def ask_llm(transcript: str) -> dict:
+def ask_llm(transcript: str, speaker: str = "student") -> dict:
     try:
-        r = requests.post(
-            "http://localhost:11434/api/generate",
-            json={
-                "model": "gemma4:latest",
-                "prompt": build_prompt(transcript),
-                "format": "json",
-                "stream": False,
-                "options": {"temperature": 0.1} # Keep it predictable
-            },
-            timeout=30 # Lower timeout to prevent long hangs
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=build_prompt(transcript, speaker),
+            config={
+                "system_instruction": "You are a silent ESL coach. Output JSON only.",
+                "response_mime_type": "application/json",
+                "response_schema": ESLResponse,
+                "temperature": 0.1,
+            }
         )
-        data = r.json().get("response", "{}")
-        parsed = json.loads(data)
-        
-        nudge = parsed.get("answer", "")
-        # concept = parsed.get("concept", "")
-        # why = parsed.get("why", "")
 
-        # If model says "NONE" or nudge is empty, don't speak
+        parsed = response.parsed
+        nudge = parsed.answer
         should_nudge = bool(nudge and nudge.upper() != "NONE" and len(nudge) > 2)
-        
+
         return {
             "should_nudge": should_nudge,
-            "lesson_id": parsed.get("lesson_id"),
-            "nudge": nudge,
-            # "concept": concept,
-            # "why": why
+            "lesson_id": parsed.lesson_id,
+            "nudge": parsed.answer,
+            "hint": parsed.hint
         }
     except Exception as e:
-        print(f"  LLM Error: {e}")
+        print(f"  Gemini Error: {e}")
         return {"should_nudge": False, "lesson_id": None, "nudge": None}
 
 # ── TTS ───────────────────────────────────────────────────────────────────────
