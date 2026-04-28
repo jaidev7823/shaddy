@@ -10,3 +10,5 @@ faster-whisper
 requests
 soundfile
 chatterbox-tts-turbo
+silero-vad
+

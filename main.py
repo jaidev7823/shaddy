@@ -2,9 +2,10 @@ import threading
 
 import numpy as np
 import pyaudio
-import webrtcvad
+import torch
+from silero_vad import load_silero_vad
 
-from config import MIC_RATE, FRAME_MS, DOWNSAMPLE, FRAME_BYTES, VAD_RATE
+from config import MIC_RATE, FRAME_MS, VAD_RATE
 from worker import worker, get_queue
 
 
@@ -12,7 +13,9 @@ def main():
     t = threading.Thread(target=worker, daemon=True)
     t.start()
 
-    vad = webrtcvad.Vad(3)
+    model = load_silero_vad()
+    model.eval()
+    
     pa = pyaudio.PyAudio()
     stream = pa.open(
         format=pyaudio.paInt16, channels=1,
@@ -27,10 +30,12 @@ def main():
         while True:
             raw = stream.read(int(MIC_RATE * FRAME_MS / 1000), exception_on_overflow=False)
             arr = np.frombuffer(raw, dtype=np.int16)
-            arr16 = arr[::DOWNSAMPLE].astype(np.int16)
-            r16 = arr16.tobytes()[:FRAME_BYTES].ljust(FRAME_BYTES, b'\x00')
+            audio_tensor = torch.from_numpy(arr.astype(np.float32) / 32768.0)
 
-            if vad.is_speech(r16, VAD_RATE):
+            with torch.no_grad():
+                speech_prob = model(audio_tensor, VAD_RATE).item()
+
+            if speech_prob > 0.5:
                 buf.append(raw); speech += 1; silence = 0; active = True
             elif active:
                 buf.append(raw); silence += 1

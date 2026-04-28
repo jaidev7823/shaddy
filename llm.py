@@ -11,9 +11,7 @@ def _result(answer: str, lesson_id: str, why: str) -> dict:
         "why":  why 
     }
 
-
 _EMPTY = {"should_nudge": False, "lesson_id": None, "nudge": None, "why": None}
-
 
 def _parse_ollama(response: str) -> dict:
     print(f"DEBUG: Raw response from LLM: '{response}'")
