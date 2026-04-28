@@ -38,6 +38,40 @@ Suggest one natural reply the student can say aloud.
 - The reply must directly fit as a response in conversation.
 - Keep it short and speakable.
 
+### EXAMPLES
+
+Input:
+"What were you doing that day?"
+
+Output:
+{{
+  "lesson_id": "GEN-01",
+  "answer": "I was helping my friend with some work.",
+  "why": "Past continuous for ongoing past action"
+}}
+
+Input:
+"Where did you go yesterday?"
+
+Output:
+{{
+  "lesson_id": "GEN-01",
+  "answer": "I went to the market with a friend.",
+  "why": "Simple past for completed actions"
+}}
+
+Input:
+"Do you like this place?"
+
+Output:
+{{
+  "lesson_id": "GEN-01",
+  "answer": "Yes, I really like the atmosphere here.",
+  "why": "Expressing opinions naturally"
+}}
+
+### END EXAMPLE
+
 ### OUTPUT — valid JSON only:
 {{
   "lesson_id": "string",
