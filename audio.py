@@ -8,13 +8,18 @@ from models import tts
 
 OUT_PATH = BASE / "lessons/generated.wav"
 
-
 def speak(text: str):
     try:
+        OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+
         with torch.no_grad():
             wav = tts.generate(text)
-        sf.write(str(OUT_PATH), wav.squeeze().cpu().numpy(), tts.sr)
-        subprocess.run(["aplay", "-q", str(OUT_PATH)])
+        
+        audio_data = wav.squeeze().cpu().numpy()
+        sf.write(str(OUT_PATH), audio_data, tts.sr)
+        
+        subprocess.run(["aplay", "-q", str(OUT_PATH)], check=True)
+
         if DEVICE == "cuda":
             torch.cuda.empty_cache()
     except Exception as e:

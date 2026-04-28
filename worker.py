@@ -59,17 +59,20 @@ def worker():
 
             lesson_id = result.get("lesson_id")
             nudge = result.get("nudge")
+            why = result.get("why")
 
             if not nudge:
                 continue
 
             now = time.time()
+            
             if lesson_id and (now - cooldowns.get(lesson_id, 0)) < COOLDOWN:
                 print(f"  skipped (cooldown): {lesson_id}")
                 continue
 
             print(f"  → nudge: {nudge}")
-            speak(nudge)
+            nudges = nudge + "WHY:" + why 
+            speak(nudges)
 
             if lesson_id:
                 cooldowns[lesson_id] = now

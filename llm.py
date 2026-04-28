@@ -3,16 +3,16 @@ from config import PROVIDER, OLLAMA_MODEL, GEMINI_MODEL, GEMINI_API_KEY, get_les
 from prompt import build_prompt
 import ollama
 
-def _result(answer: str, lesson_id: str, hint: str) -> dict:
+def _result(answer: str, lesson_id: str, why: str) -> dict:
     return {
         "should_nudge": bool(answer and answer.upper() != "NONE" and len(answer) > 2),
         "lesson_id": lesson_id,
         "nudge": answer,
-        "hint": hint
+        "why":  why 
     }
 
 
-_EMPTY = {"should_nudge": False, "lesson_id": None, "nudge": None, "hint": None}
+_EMPTY = {"should_nudge": False, "lesson_id": None, "nudge": None, "why": None}
 
 
 def _parse_ollama(response: str) -> dict:
@@ -41,7 +41,7 @@ def _parse_ollama(response: str) -> dict:
     return _result(
         data.get("answer", ""),
         data.get("lesson_id"),
-        data.get("hint")
+        data.get("why")
     )
 
 
@@ -65,7 +65,7 @@ def ask_gemini(transcript: str) -> dict:
         config={"response_mime_type": "application/json"}
     )
     p = r.parsed
-    return _result(p.answer, p.lesson_id, p.hint)
+    return _result(p.answer, p.lesson_id, p.why)
 
 
 def ask_llm(transcript: str) -> dict:
