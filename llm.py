@@ -1,7 +1,7 @@
 import json
 from config import PROVIDER, OLLAMA_MODEL, GEMINI_MODEL, GEMINI_API_KEY, get_lessons
 from prompt import build_prompt
-
+import ollama
 
 def _result(answer: str, lesson_id: str, hint: str) -> dict:
     return {
@@ -16,30 +16,45 @@ _EMPTY = {"should_nudge": False, "lesson_id": None, "nudge": None, "hint": None}
 
 
 def _parse_ollama(response: str) -> dict:
+    print(f"DEBUG: Raw response from LLM: '{response}'")
+    if not response or not response.strip():
+        print("empty")
+        return _EMPTY
+
     raw = response.strip()
     if raw.startswith("```"):
-        raw = raw.split("```")[1]
+        parts = raw.split("```")
+        if len(parts) > 1:
+            raw = parts[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    data = json.loads(raw.strip())
-    return _result(data.get("answer", ""), data.get("lesson_id"), data.get("hint"))
+
+    raw = raw.strip()
+
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        print("Invalid JSON from Ollama:", raw)
+        return _EMPTY
+
+    return _result(
+        data.get("answer", ""),
+        data.get("lesson_id"),
+        data.get("hint")
+    )
 
 
 def ask_ollama(transcript: str) -> dict:
-    import ollama
-    r = ollama.chat(
+    # Use generate instead of chat to simplify the request structure
+    r = ollama.generate(
         model=OLLAMA_MODEL,
-        messages=[
-            {"role": "system", "content": "Output JSON only. No markdown."},
-            {"role": "user", "content": build_prompt(transcript)}
-        ],
-        options={
-            "num_predict": 60,     # limit tokens
-            "temperature": 0.2
-        }
+        prompt=build_prompt(transcript)
     )
-    return _parse_ollama(r["message"]["content"])
-
+    # Note: 'generate' uses ['response'], 'chat' uses ['message']['content']
+    content = r.get("response", "") 
+    print(f"DEBUG: Raw response: '{content}'")
+    return _parse_ollama(content)
 
 def ask_gemini(transcript: str) -> dict:
     from google import genai
