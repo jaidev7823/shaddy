@@ -1,12 +1,12 @@
-from pathlib import Path
-
-import torch
-from faster_whisper import WhisperModel
 from chatterbox.tts_turbo import ChatterboxTurboTTS
+from faster_whisper import WhisperModel
 
-BASE = Path(__file__).parent
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+from config import DEVICE
 
-tts_model = ChatterboxTurboTTS.from_pretrained(device=DEVICE)
-whisper = WhisperModel("medium", device="cuda", compute_type="float16")
-VOICE_REF = str(BASE / "audio/l_voice_sample.wav")
+whisper = WhisperModel(
+    "models/faster-whisper-large-v3",
+    device="cuda",
+    compute_type="float16"
+)
+tts = ChatterboxTurboTTS.from_pretrained(device=DEVICE)
+

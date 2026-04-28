@@ -1,50 +1,61 @@
-import os
-from pathlib import Path
-
-from dotenv import load_dotenv
-from google import genai
-from pydantic import BaseModel
-
+import json
+from config import PROVIDER, OLLAMA_MODEL, GEMINI_MODEL, GEMINI_API_KEY, get_lessons
 from prompt import build_prompt
 
-load_dotenv()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable is not set")
-
-client = genai.Client(api_key=GEMINI_API_KEY)
-
-
-class ESLResponse(BaseModel):
-    lesson_id: str
-    answer: str
-    hint: str
+def _result(answer: str, lesson_id: str, hint: str) -> dict:
+    return {
+        "should_nudge": bool(answer and answer.upper() != "NONE" and len(answer) > 2),
+        "lesson_id": lesson_id,
+        "nudge": answer,
+        "hint": hint
+    }
 
 
-def ask_llm(transcript: str, speaker: str = "student") -> dict:
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=build_prompt(transcript, speaker),
-            config={
-                "system_instruction": "You are a silent ESL coach. Output JSON only.",
-                "response_mime_type": "application/json",
-                "response_schema": ESLResponse,
-                "temperature": 0.1,
-            }
-        )
+_EMPTY = {"should_nudge": False, "lesson_id": None, "nudge": None, "hint": None}
 
-        parsed = response.parsed
-        nudge = parsed.answer
-        should_nudge = bool(nudge and nudge.upper() != "NONE" and len(nudge) > 2)
 
-        return {
-            "should_nudge": should_nudge,
-            "lesson_id": parsed.lesson_id,
-            "nudge": parsed.answer,
-            "hint": parsed.hint
+def _parse_ollama(response: str) -> dict:
+    raw = response.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    data = json.loads(raw.strip())
+    return _result(data.get("answer", ""), data.get("lesson_id"), data.get("hint"))
+
+
+def ask_ollama(transcript: str) -> dict:
+    import ollama
+    r = ollama.chat(
+        model=OLLAMA_MODEL,
+        messages=[
+            {"role": "system", "content": "Output JSON only. No markdown."},
+            {"role": "user", "content": build_prompt(transcript)}
+        ],
+        options={
+            "num_predict": 60,     # limit tokens
+            "temperature": 0.2
         }
+    )
+    return _parse_ollama(r["message"]["content"])
+
+
+def ask_gemini(transcript: str) -> dict:
+    from google import genai
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    r = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=build_prompt(transcript),
+        config={"response_mime_type": "application/json"}
+    )
+    p = r.parsed
+    return _result(p.answer, p.lesson_id, p.hint)
+
+
+def ask_llm(transcript: str) -> dict:
+    try:
+        return ask_ollama(transcript) if PROVIDER == "ollama" else ask_gemini(transcript)
     except Exception as e:
-        print(f"  Gemini Error: {e}")
-        return {"should_nudge": False, "lesson_id": None, "nudge": None}
+        print(f"  LLM Error: {e}")
+        return _EMPTY

@@ -1,24 +1,20 @@
 import subprocess
-from pathlib import Path
 
 import soundfile as sf
 import torch
 
-from models import tts_model, VOICE_REF
+from config import BASE, DEVICE
+from models import tts
 
-BASE = Path(__file__).parent
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+OUT_PATH = BASE / "lessons/generated.wav"
 
 
-def generate_and_play(text: str):
+def speak(text: str):
     try:
         with torch.no_grad():
-            wav = tts_model.generate(text, audio_prompt_path=VOICE_REF)
-        wav = wav.detach().cpu().contiguous()
-        out_path = BASE / "lessons/generated.wav"
-        sf.write(str(out_path), wav.squeeze().numpy(), tts_model.sr)
-        subprocess.run(["aplay", "-q", str(out_path)])
-        del wav
+            wav = tts.generate(text)
+        sf.write(str(OUT_PATH), wav.squeeze().cpu().numpy(), tts.sr)
+        subprocess.run(["aplay", "-q", str(OUT_PATH)])
         if DEVICE == "cuda":
             torch.cuda.empty_cache()
     except Exception as e:

@@ -1,18 +1,14 @@
-import json
-from pathlib import Path
-
-BASE = Path(__file__).parent
-lessons = json.loads((BASE / "lessons/lessons.json").read_text())
+from config import get_lessons
 
 
 def build_prompt(transcript: str, speaker: str = "student") -> str:
+    lessons = get_lessons()
     topics = "\n".join(f'{l["id"]}: {l["topic"]}' for l in lessons)
 
     if speaker == "student":
         situation = f"""The student just said this to their conversation partner:
 "{transcript}"
 Your job: Rewrite it as a more natural, fluent English sentence they can say right now."""
-
     else:
         situation = f"""The other person just said this TO the student:
 "{transcript}"

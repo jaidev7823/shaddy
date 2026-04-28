@@ -6,18 +6,10 @@ from queue import Queue, Empty
 
 import webrtcvad
 
-from config import (
-    MIC_RATE,
-    VAD_RATE,
-    FRAME_MS,
-    FRAME_BYTES,
-    DOWNSAMPLE,
-    COOLDOWN,
-)
+from config import MIC_RATE, COOLDOWN
 from models import whisper
-from prompt import build_prompt  # noqa: F401
-from llm import ask_llm
-from audio import generate_and_play
+from llm import ask_llm, ask_ollama
+from audio import speak
 
 cooldowns = {}
 audio_queue = Queue(maxsize=1)
@@ -40,9 +32,9 @@ def worker():
                     w.writeframes(audio)
                 tmp = f.name
 
-            segs, info = whisper.transcribe(
+            segs, _ = whisper.transcribe(
                 tmp,
-                language="en",
+                language=None,
                 task="translate",
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=500),
@@ -59,7 +51,7 @@ def worker():
                 continue
             print(f'  heard: "{text}"')
 
-            result = ask_llm(text)
+            result = ask_ollama(text)
             print(f"  llm: {result}")
 
             if not result.get("should_nudge"):
@@ -77,7 +69,7 @@ def worker():
                 continue
 
             print(f"  → nudge: {nudge}")
-            generate_and_play(nudge)
+            speak(nudge)
 
             if lesson_id:
                 cooldowns[lesson_id] = now
