@@ -39,7 +39,7 @@ def main():
                 buf.append(raw); speech += 1; silence = 0; active = True
             elif active:
                 buf.append(raw); silence += 1
-                if silence > 300 // FRAME_MS:
+                if silence > 1500 // FRAME_MS:
                     if speech > 12:
                         chunk = b"".join(buf)
                         try:

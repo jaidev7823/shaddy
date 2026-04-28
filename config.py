@@ -12,7 +12,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 MIC_RATE = 16000
 VAD_RATE = 16000
-FRAME_MS = 30
+FRAME_MS = 32
 FRAME_BYTES = int(VAD_RATE * FRAME_MS / 1000) * 2
 DOWNSAMPLE = MIC_RATE // VAD_RATE
 
