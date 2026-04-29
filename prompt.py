@@ -22,7 +22,7 @@ Someone in the conversation said:
 ### TASK
 Suggest one natural reply the student can say aloud.
 
-### AVAILABLE TOPICS
+### TOPICS
 {topics}
 
 ### OUTPUT FIELDS
@@ -37,6 +37,8 @@ Suggest one natural reply the student can say aloud.
 - DO NOT answer as yourself.
 - The reply must directly fit as a response in conversation.
 - Keep it short and speakable.
+- Do not teach anything other then {topics} is mentioned
+- If question require to use anything other then {topics} then return "not the topic"
 
 ### EXAMPLES
 
