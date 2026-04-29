@@ -1,14 +1,23 @@
---index-url https://download.pytorch.org/whl/cu124
+--index-url https://pypi.org/simple
+--extra-index-url https://download.pytorch.org/whl/cu124
 
 torch==2.6.0
 torchaudio==2.6.0
-torchvision
+torchvision==0.21.0
 
-numpy
-webrtcvad
-faster-whisper
-requests
-soundfile
-chatterbox-tts-turbo
-silero-vad
+numpy==1.26.4
 
+pyaudio
+dotenv
+ollama
+
+huggingface_hub>=0.23
+
+faster-whisper==1.2.1
+ctranslate2==4.3.1
+silero-vad==6.2.1
+webrtcvad==2.0.10
+soundfile==0.12.1
+
+requests==2.32.3
+chatterbox-tts==0.1.7
