@@ -1,23 +1,41 @@
 --index-url https://pypi.org/simple
 --extra-index-url https://download.pytorch.org/whl/cu124
 
-torch==2.6.0
-torchaudio==2.6.0
-torchvision==0.21.0
+# Core ML
+torch
+torchaudio
+torchvision
 
-numpy==1.26.4
+# Core numerical
+numpy
 
-pyaudio
-dotenv
+# Audio / speech stack
+librosa
+soundfile
+webrtcvad
+silero-vad
+faster-whisper
+ctranslate2
+
+# TTS
+chatterbox-tts
+
+# Backend
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+aiofiles
+websockets
+
+# UI
+gradio
+
+# Utilities
+requests
+huggingface_hub
+python-dotenv
 ollama
 
-huggingface_hub>=0.23
-
-faster-whisper==1.2.1
-ctranslate2==4.3.1
-silero-vad==6.2.1
-webrtcvad==2.0.10
-soundfile==0.12.1
-
-requests==2.32.3
-chatterbox-tts==0.1.7
+# Optional
+pyaudio
