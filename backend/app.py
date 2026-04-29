@@ -83,12 +83,6 @@ async def startup_event():
         print(f"❌ Startup error: {e}")
         raise
 
-
-# ============================================================================
-# HTTP ENDPOINTS
-# ============================================================================
-
-
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint."""
@@ -180,11 +174,7 @@ async def get_generated_audio():
     except Exception as e:
         raise HTTPException(status_code=404, detail="No audio generated yet")
 
-
-# ============================================================================
 # WEBSOCKET ENDPOINT
-# ============================================================================
-
 
 @app.websocket("/ws/audio")
 async def websocket_audio_stream(websocket: WebSocket):
@@ -234,8 +224,11 @@ async def websocket_audio_stream(websocket: WebSocket):
                 continue
 
             msg_type = data.get("type")
+            print(f"DEBUG: Received message type: {msg_type}") # <--- Check this
 
             if msg_type == "audio_chunk":
+                audio_b64 = data.get("data", {}).get("audio")
+                print(f"DEBUG: Audio string length: {len(audio_b64) if audio_b64 else 0}")
                 try:
                     import base64
 

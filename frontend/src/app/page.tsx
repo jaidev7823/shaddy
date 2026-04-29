@@ -40,98 +40,77 @@ export default function Recorder() {
     };
   }, [isRecording]);
 
-  async function startRecording() {
-    setError(null);
-    setTranscript("");
-    setLLMResponse(null);
-    setStatus("Initializing...");
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: 16000 },
-      });
-      setStatus("Connected to microphone");
-
-      const ws = new WebSocket(`${WS_URL}/ws/audio`);
-
-      ws.onopen = () => {
-        setStatus("Connected to backend");
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg: ServerMessage = JSON.parse(event.data);
-          setResponse(msg);
-
-          if (msg.type === "status") {
-            const state = msg.data?.state || msg.data?.message || "";
-            setStatus(state);
-            if (msg.data?.text) {
-              setTranscript(msg.data.text);
-            }
-          } else if (msg.type === "response") {
-            if (msg.data?.transcript) {
-              setTranscript(msg.data.transcript);
-            }
-            if (msg.data?.llm_response) {
-              setLLMResponse(msg.data.llm_response);
-            }
-            setStatus("Nudge generated");
-          } else if (msg.type === "error") {
-            setError(msg.data?.message || "Backend error");
-            setStatus("Error");
-          }
-        } catch (err) {
-          console.error("Failed to parse message:", err);
-        }
-      };
-
-      ws.onerror = () => {
-        setError("WebSocket connection error");
-        setStatus("Disconnected");
-      };
-
-      ws.onclose = () => {
-        setStatus("Disconnected");
-        if (isRecording) {
-          mediaRecorderRef.current?.stop();
-          setIsRecording(false);
-        }
-      };
-
-      webSocketRef.current = ws;
-
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm",
-      });
-
-      mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-          const arrayBuffer = await event.data.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
-          const base64 = btoa(String.fromCharCode.apply(null, Array.from(uint8Array)));
-
-          const message: AudioMessage = {
-            type: "audio_chunk",
-            data: {
-              audio: base64,
-              sample_rate: 16000,
-            },
-          };
-
-          ws.send(JSON.stringify(message));
-        }
-      };
-
-      mediaRecorder.start(100);
-      mediaRecorderRef.current = mediaRecorder;
-      setIsRecording(true);
-      setStatus("Recording... Click to stop");
-    } catch (err: any) {
-      setError(err.message || "Failed to access microphone");
-      setStatus("Error");
-    }
+function floatTo16BitPCM(input: Float32Array) {
+  const output = new Int16Array(input.length);
+  for (let i = 0; i < input.length; i++) {
+    // Clamp values between -1 and 1
+    const s = Math.max(-1, Math.min(1, input[i]));
+    output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
   }
+  return output;
+}
+
+// Add this helper function outside your component
+async function startRecording() {
+  setError(null);
+  setStatus("Initializing...");
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Force 16kHz to match your backend VAD/Whisper models
+    const audioContext = new AudioContext({ sampleRate: 16000 }); 
+    const source = audioContext.createMediaStreamSource(stream);
+    
+    // 4096 samples at 16kHz is ~250ms of audio per chunk
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    const ws = new WebSocket(`${WS_URL}/ws/audio`);
+    webSocketRef.current = ws;
+
+    ws.onopen = () => {
+      setStatus("Connected & Streaming");
+      console.log("WebSocket opened successfully");
+    };
+
+    processor.onaudioprocess = (e) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcm16 = floatTo16BitPCM(inputData);
+        
+        // Convert Int16Array to Base64
+        const uint8View = new Uint8Array(pcm16.buffer);
+        let binary = "";
+        for (let i = 0; i < uint8View.byteLength; i++) {
+          binary += String.fromCharCode(uint8View[i]);
+        }
+        const base64Audio = btoa(binary);
+
+        ws.send(JSON.stringify({
+          type: "audio_chunk",
+          data: {
+            audio: base64Audio,
+            sample_rate: 16000
+          }
+        }));
+      }
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
+    // Keep references for cleanup
+    (window as any).audioStream = stream;
+    (window as any).audioContext = audioContext;
+    
+    setIsRecording(true);
+    setStatus("Recording...");
+
+  } catch (err: any) {
+    console.error("Recording error:", err);
+    setError(err.message || "Could not start recording");
+    setStatus("Error");
+  }
+} // <--- This was likely the missing brace causing the semicolon error
 
   function stopRecording() {
     if (mediaRecorderRef.current) {
