@@ -5,11 +5,12 @@ import base64
 import json
 import sys
 from pathlib import Path
+from backend.config import CHUNK_SIZE
 
 import websockets
 
 
-async def stream_audio_file(file_path: str, chunk_size: int = 4096):
+async def stream_audio_file(file_path: str, chunk_size=CHUNK_SIZE):
     """Stream audio file through WebSocket."""
     file_path = Path(file_path)
 
@@ -26,7 +27,7 @@ async def stream_audio_file(file_path: str, chunk_size: int = 4096):
 
     uri = "ws://localhost:8000/ws/audio"
     print(f"🔗 Connecting to {uri}...")
-
+    
     try:
         async with websockets.connect(uri) as websocket:
             print("✅ Connected to WebSocket")

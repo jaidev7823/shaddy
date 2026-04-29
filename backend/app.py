@@ -253,7 +253,12 @@ async def websocket_audio_stream(websocket: WebSocket):
 
                     # Decode base64 audio
                     audio_bytes = base64.b64decode(audio_b64)
-
+                    if len(audio_bytes) % 2 != 0:
+                        # Remove the trailing odd byte so it doesn't crash the converter
+                        audio_bytes = audio_bytes[:-1]
+                    if not audio_bytes:
+                        continue
+                    
                     # Convert to numpy array
                     arr = np.frombuffer(audio_bytes, dtype=np.int16)
                     audio_tensor = torch.from_numpy(arr.astype(np.float32) / 32768.0)

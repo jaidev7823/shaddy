@@ -3,8 +3,12 @@ from faster_whisper import WhisperModel
 
 from backend.config import DEVICE
 
+from pathlib import Path
+
+MODEL_DIR = Path(__file__).resolve().parent / "models" / "faster-whisper-large-v3"
+
 whisper = WhisperModel(
-    "models/faster-whisper-large-v3",
+    str(MODEL_DIR),
     device="cuda",
     compute_type="float16"
 )

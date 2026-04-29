@@ -18,21 +18,29 @@ class VADService:
     def detect_speech(self, audio_tensor: torch.Tensor, threshold: float = 0.5) -> float:
         """
         Detect speech probability in audio.
-        
-        Args:
-            audio_tensor: Audio tensor (float32, normalized to [-1, 1])
-            threshold: Probability threshold for speech detection
-            
-        Returns:
-            Speech probability (0.0 - 1.0)
         """
+        # --- THE FIX STARTS HERE ---
+        # Ensure the tensor is the correct size (512 for 16kHz)
+        target_size = 512
+        current_size = audio_tensor.shape[-1]
+
+        if current_size != target_size:
+            if current_size < target_size:
+                # Pad with zeros if too small
+                padding = target_size - current_size
+                audio_tensor = torch.nn.functional.pad(audio_tensor, (0, padding))
+            else:
+                # Slice if too big (take the first 512)
+                audio_tensor = audio_tensor[:target_size]
+        # --- THE FIX ENDS HERE ---
+
         with torch.no_grad():
+            # Ensure tensor has batch dimension: [512] -> [1, 512]
+            if audio_tensor.dim() == 1:
+                audio_tensor = audio_tensor.unsqueeze(0)
+                
             speech_prob = self.model(audio_tensor, VAD_RATE).item()
         return speech_prob
-
-    def is_speech(self, audio_tensor: torch.Tensor, threshold: float = 0.5) -> bool:
-        """Check if audio contains speech."""
-        return self.detect_speech(audio_tensor, threshold) > threshold
 
 
 class SpeakerVerificationService:
