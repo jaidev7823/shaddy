@@ -1,174 +1,232 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
-export default function Home() {
-  const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<string>("Ready");
-  const [result, setResult] = useState<any>(null);
+interface AudioMessage {
+  type: "audio_chunk" | "ping" | "close";
+  data?: {
+    audio: string;
+    sample_rate: number;
+  };
+}
+
+interface ServerMessage {
+  type: "status" | "response" | "error";
+  data?: Record<string, any>;
+}
+
+export default function Recorder() {
+  const [isRecording, setIsRecording] = useState(false);
+  const [status, setStatus] = useState("Ready");
+  const [response, setResponse] = useState<ServerMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [health, setHealth] = useState<any>(null);
+  const [transcript, setTranscript] = useState<string>("");
+  const [llmResponse, setLLMResponse] = useState<any>(null);
 
-  const backendUrl = useMemo(() => BACKEND_URL, []);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const webSocketRef = useRef<WebSocket | null>(null);
 
-  async function handleHealthCheck() {
+  useEffect(() => {
+    return () => {
+      if (webSocketRef.current && webSocketRef.current.readyState === WebSocket.OPEN) {
+        webSocketRef.current.send(JSON.stringify({ type: "close" }));
+        webSocketRef.current.close();
+      }
+      if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, [isRecording]);
+
+  async function startRecording() {
     setError(null);
-    setStatus("Checking backend...");
+    setTranscript("");
+    setLLMResponse(null);
+    setStatus("Initializing...");
+
     try {
-      const response = await fetch(`${backendUrl}/health`);
-      const body = await response.json();
-      setHealth(body);
-      setStatus("Backend healthy");
-    } catch (err) {
-      setError("Failed to reach backend. Is it running?");
-      setStatus("Backend unavailable");
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { sampleRate: 16000 },
+      });
+      setStatus("Connected to microphone");
+
+      const ws = new WebSocket(`${WS_URL}/ws/audio`);
+
+      ws.onopen = () => {
+        setStatus("Connected to backend");
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg: ServerMessage = JSON.parse(event.data);
+          setResponse(msg);
+
+          if (msg.type === "status") {
+            const state = msg.data?.state || msg.data?.message || "";
+            setStatus(state);
+            if (msg.data?.text) {
+              setTranscript(msg.data.text);
+            }
+          } else if (msg.type === "response") {
+            if (msg.data?.transcript) {
+              setTranscript(msg.data.transcript);
+            }
+            if (msg.data?.llm_response) {
+              setLLMResponse(msg.data.llm_response);
+            }
+            setStatus("Nudge generated");
+          } else if (msg.type === "error") {
+            setError(msg.data?.message || "Backend error");
+            setStatus("Error");
+          }
+        } catch (err) {
+          console.error("Failed to parse message:", err);
+        }
+      };
+
+      ws.onerror = () => {
+        setError("WebSocket connection error");
+        setStatus("Disconnected");
+      };
+
+      ws.onclose = () => {
+        setStatus("Disconnected");
+        if (isRecording) {
+          mediaRecorderRef.current?.stop();
+          setIsRecording(false);
+        }
+      };
+
+      webSocketRef.current = ws;
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: "audio/webm",
+      });
+
+      mediaRecorder.ondataavailable = async (event) => {
+        if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+          const arrayBuffer = await event.data.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          const base64 = btoa(String.fromCharCode.apply(null, Array.from(uint8Array)));
+
+          const message: AudioMessage = {
+            type: "audio_chunk",
+            data: {
+              audio: base64,
+              sample_rate: 16000,
+            },
+          };
+
+          ws.send(JSON.stringify(message));
+        }
+      };
+
+      mediaRecorder.start(100);
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(true);
+      setStatus("Recording... Click to stop");
+    } catch (err: any) {
+      setError(err.message || "Failed to access microphone");
+      setStatus("Error");
     }
   }
 
-  async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setResult(null);
-
-    if (!file) {
-      setError("Please choose an audio file to upload.");
-      return;
+  function stopRecording() {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
     }
-
-    setLoading(true);
-    setStatus("Uploading audio...");
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(`${backendUrl}/process-audio`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.detail || "Upload failed");
-      }
-
-      const body = await response.json();
-      setResult(body);
-      setStatus("Audio processed successfully");
-    } catch (err: any) {
-      setError(err.message || "Unexpected error");
-      setStatus("Processing failed");
-    } finally {
-      setLoading(false);
+    if (webSocketRef.current && webSocketRef.current.readyState === WebSocket.OPEN) {
+      webSocketRef.current.send(JSON.stringify({ type: "close" }));
+      webSocketRef.current.close();
     }
+    setIsRecording(false);
+    setStatus("Stopped");
   }
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 px-6 py-8">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
         <section className="rounded-3xl border border-slate-700 bg-slate-900/90 p-8 shadow-xl shadow-slate-950/30">
           <div className="mb-6 flex flex-col gap-2">
-            <h1 className="text-4xl font-semibold text-white">Shady Audio Debug UI</h1>
+            <h1 className="text-4xl font-semibold text-white">🎙️ Shady Real-Time Audio</h1>
             <p className="max-w-2xl text-slate-400">
-              Upload a WAV or audio file to the backend and inspect transcription, speaker
-              verification, and LLM feedback.
+              Click the button below to start recording. Audio is streamed to the backend in real-time.
             </p>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+          <div className="flex flex-wrap gap-4 items-center">
             <button
-              type="button"
-              onClick={handleHealthCheck}
-              className="rounded-2xl bg-slate-700 px-5 py-3 text-sm font-medium text-slate-100 transition hover:bg-slate-600"
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`px-8 py-4 rounded-2xl font-semibold text-lg transition ${
+                isRecording
+                  ? "bg-red-500 hover:bg-red-600 text-white"
+                  : "bg-teal-500 hover:bg-teal-600 text-slate-950"
+              }`}
             >
-              Check Backend Health
+              {isRecording ? "🛑 Stop Recording" : "🎤 Start Recording"}
             </button>
-            <div className="rounded-2xl bg-slate-800 px-5 py-3 text-sm text-slate-400">
-              {health ? (
-                <pre className="whitespace-pre-wrap text-slate-200">
-                  {JSON.stringify(health, null, 2)}
-                </pre>
-              ) : (
-                <span>Backend URL: {backendUrl}</span>
-              )}
+
+            <div className="flex-1 rounded-2xl bg-slate-800 px-4 py-3 text-sm font-medium text-slate-300">
+              {status}
             </div>
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-700 bg-slate-900/90 p-8 shadow-xl shadow-slate-950/30">
-          <form onSubmit={handleUpload} className="flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-slate-200" htmlFor="audio-file">
-                Upload audio file
-              </label>
-              <input
-                id="audio-file"
-                type="file"
-                accept="audio/*"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                className="rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 outline-none transition focus:border-slate-500"
-              />
-            </div>
+        {error ? (
+          <div className="rounded-2xl border border-rose-500 bg-rose-500/10 px-6 py-4 text-sm text-rose-300">
+            <span className="font-semibold">Error:</span> {error}
+          </div>
+        ) : null}
 
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="submit"
-                disabled={loading}
-                className="rounded-2xl bg-teal-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-teal-400 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loading ? "Processing…" : "Upload and Process"}
-              </button>
-              <span className="inline-flex items-center rounded-2xl bg-slate-800 px-4 py-3 text-sm text-slate-400">
-                {status}
-              </span>
+        {transcript ? (
+          <section className="rounded-3xl border border-slate-700 bg-slate-900/90 p-8 shadow-xl shadow-slate-950/30">
+            <h2 className="text-xl font-semibold text-white mb-4">📝 Transcript</h2>
+            <div className="rounded-2xl border border-slate-700 bg-slate-950 p-6 text-slate-200 whitespace-pre-wrap break-words">
+              {transcript}
             </div>
-          </form>
+          </section>
+        ) : null}
 
-          {error ? (
-            <div className="rounded-2xl border border-rose-500 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
-              {error}
+        {llmResponse ? (
+          <section className="rounded-3xl border border-slate-700 bg-slate-900/90 p-8 shadow-xl shadow-slate-950/30">
+            <h2 className="text-xl font-semibold text-white mb-4">💡 LLM Feedback</h2>
+            <div className="grid gap-4">
+              {llmResponse.should_nudge ? (
+                <div className="rounded-2xl border border-teal-500 bg-teal-500/10 p-6">
+                  <div className="text-sm font-semibold text-teal-300 mb-2">Nudge</div>
+                  <p className="text-teal-100 mb-4 text-lg">{llmResponse.nudge}</p>
+                  {llmResponse.why ? (
+                    <div className="text-sm text-teal-200 italic">
+                      Why: {llmResponse.why}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-slate-700 bg-slate-900 p-6">
+                  <div className="text-sm text-slate-400">No nudge needed for this input.</div>
+                </div>
+              )}
+
+              {llmResponse.lesson_id ? (
+                <div className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
+                  <div className="text-xs text-slate-400">Lesson ID</div>
+                  <div className="text-sm font-mono text-slate-200">{llmResponse.lesson_id}</div>
+                </div>
+              ) : null}
             </div>
-          ) : null}
+          </section>
+        ) : null}
 
-          {result ? (
-            <div className="mt-8 grid gap-4 rounded-3xl border border-slate-700 bg-slate-950/80 p-6">
-              <div>
-                <h2 className="text-xl font-semibold text-white">Result</h2>
-                <p className="mt-2 text-slate-400">
-                  Review the backend response for transcription and nudging.
-                </p>
-              </div>
-
-              <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <div className="grid gap-1 text-sm text-slate-300">
-                  <span className="font-medium text-slate-100">Transcript</span>
-                  <pre className="whitespace-pre-wrap text-slate-100">{result.transcript}</pre>
-                </div>
-                <div className="grid gap-1 text-sm text-slate-300 md:grid-cols-2">
-                  <div>
-                    <span className="font-medium text-slate-100">Speaker is student</span>
-                    <p>{result.speaker_is_student ? "Yes" : "No"}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-slate-100">Similarity</span>
-                    <p>{result.speaker_similarity?.toFixed(3) ?? "N/A"}</p>
-                  </div>
-                </div>
-                <div className="grid gap-1 text-sm text-slate-300">
-                  <span className="font-medium text-slate-100">LLM Response</span>
-                  <pre className="whitespace-pre-wrap text-slate-100">{JSON.stringify(result.llm_response, null, 2)}</pre>
-                </div>
-                <div className="text-sm text-slate-300">
-                  <span className="font-medium text-slate-100">Audio generated</span>
-                  <p>{result.audio_generated ? "Yes" : "No"}</p>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </section>
+        {response ? (
+          <section className="rounded-3xl border border-slate-700 bg-slate-900/90 p-8 shadow-xl shadow-slate-950/30">
+            <h2 className="text-xl font-semibold text-white mb-4">📡 Raw Response</h2>
+            <pre className="rounded-2xl border border-slate-700 bg-slate-950 p-6 overflow-x-auto text-xs text-slate-300">
+              {JSON.stringify(response, null, 2)}
+            </pre>
+          </section>
+        ) : null}
       </div>
     </main>
   );
