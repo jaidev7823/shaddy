@@ -25,6 +25,7 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:latest")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 VOICE_REF = str(BASE / "audio/l_voice_sample.wav")
+SAMPLE_VOICE_STUDENT = str(BASE / "audio/my_voice_sample.wav") 
 LESSONS_PATH = BASE / "lessons/lessons.json"
 
 def get_lessons():
