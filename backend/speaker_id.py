@@ -72,11 +72,12 @@ def get_verification_model():
         raise
 
 
-from speechbrain.dataio.dataio import read_audio
-
+import soundfile as sf
+import torch
+import numpy as np
+from scipy.signal import resample
 
 def get_student_embedding(force_reload=False):
-    """Load, resample, and enroll student voice embedding."""
     global _student_embedding
 
     if _student_embedding is not None and not force_reload:
@@ -85,42 +86,47 @@ def get_student_embedding(force_reload=False):
     voice_ref_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "audio", "my_voice_sample.wav")
     )
-    
+
+    print("Audio path:", voice_ref_path)
+
     try:
         if not os.path.exists(voice_ref_path):
-            print(f"❌ File not found: {voice_ref_path}")
-            return None
+            raise FileNotFoundError(f"Reference voice file not found: {voice_ref_path}")
 
-        # 1. Load with torchaudio to get the original Sample Rate (fs)
-        # Note: If this fails, run 'pip install pysoundfile'
-        signal, fs = torchaudio.load(voice_ref_path)
+        print("1 → loading audio via soundfile")
 
-        # 2. Convert to Mono if Stereo
-        if signal.shape[0] > 1:
-            signal = signal.mean(dim=0, keepdim=True)
+        signal, sr = sf.read(voice_ref_path)
+        print(f"Loaded. Sample rate: {sr} Hz | Shape: {signal.shape}")
 
-        # 3. Auto-Resample to 16000 Hz if necessary
-        target_sample_rate = 16000
-        if fs != target_sample_rate:
-            print(f"🔄 Resampling reference from {fs}Hz to {target_sample_rate}Hz...")
-            resampler = T.Resample(orig_freq=fs, new_freq=target_sample_rate)
-            signal = resampler(signal)
+        # Convert to mono
+        if len(signal.shape) > 1:
+            signal = signal.mean(axis=1)
 
-        # 4. Prepare for SpeechBrain Model
-        # Model expects shape: [batch, time]
+        target_sr = 16000
+
+        if sr != target_sr:
+            print(f"Resampling {sr} → {target_sr}")
+            num_samples = int(len(signal) * target_sr / sr)
+            signal = resample(signal, num_samples)
+        else:
+            print("Already 16kHz")
+
+        # Convert to torch tensor [1, time]
+        signal = torch.tensor(signal, dtype=torch.float32).unsqueeze(0)
+
+        print("Final tensor shape:", signal.shape)
+
         model = get_verification_model()
-        
-        # Ensure signal is on the same device as the model (CPU/CUDA)
-        signal = signal.to(model.device)
 
-        with torch.no_grad():
-            # encode_batch returns [batch, 1, embedding_size]
-            embedding = model.encode_batch(signal)
-            _student_embedding = embedding.squeeze(0).squeeze(0)
+        embedding = model.encode_batch(signal)
+        _student_embedding = embedding.squeeze(0).squeeze(0)
 
-        print(f"✅ Enrollment Successful! Reference is now normalized to 16kHz.")
+        print("Embedding shape:", _student_embedding.shape)
+
         return _student_embedding
 
     except Exception as e:
-        print(f"⚠️ Enrollment failed: {e}")
+        import traceback
+        traceback.print_exc()
+        print("Error:", e)
         return None
