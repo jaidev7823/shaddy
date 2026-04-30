@@ -274,7 +274,7 @@ async def websocket_audio_stream(websocket: WebSocket):
                         if silence_frames > trigger_limit:  # ~1.5 seconds of silence
                             print("Silence threshold reached (time-based)")
                             print("user not talking for this time")
-                            if speech_frames > 5:  # Minimum speech duration
+                            if speech_frames > 0.5:  # Minimum speech duration
                                 await websocket.send_json(
                                     {
                                         "type": "status",
@@ -375,7 +375,8 @@ async def websocket_audio_stream(websocket: WebSocket):
                                     await websocket.send_json(
                                         {"type": "response", "data": response_data}
                                     )
-
+                            else:
+                                print("Ignored short speech") 
                             buf, speech_frames, silence_frames, active = [], 0, 0, False
 
                 except Exception as e:
