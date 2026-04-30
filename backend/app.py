@@ -258,7 +258,15 @@ async def websocket_audio_stream(websocket: WebSocket):
                     audio_tensor = torch.from_numpy(arr.astype(np.float32) / 32768.0)
 
                     # VAD detection
+                    print(f"🔍 VAD DEBUG: Running Silero VAD detection...")
+                    print(f"🔍 VAD DEBUG: Input tensor - shape={audio_tensor.shape}, dtype={audio_tensor.dtype}")
+                    print(f"🔍 VAD DEBUG: Input stats - min={audio_tensor.min():.4f}, max={audio_tensor.max():.4f}, mean={audio_tensor.mean():.4f}")
+                    
                     speech_prob = vad_service.detect_speech(audio_tensor)
+                    
+                    print(f"🔍 VAD DEBUG: Output speech_prob={speech_prob:.4f} (type: {type(speech_prob).__name__})")
+                    print(f"🔍 VAD DEBUG: Decision - speech_prob > 0.5? {speech_prob > 0.5}")
+                    print(f"🔍 VAD DEBUG: VAD service info - {type(vad_service).__name__}, model loaded: {vad_service.model is not None}")
 
                     if speech_prob > 0.5:
                         buf.append(audio_bytes)
@@ -280,10 +288,12 @@ async def websocket_audio_stream(websocket: WebSocket):
                     elif active:
                         buf.append(audio_bytes)
                         silence_frames += 1
+                        trigger_limit = 1500 // FRAME_MS
+                        print(f"🤫 [WAITING] Silence frames: {silence_frames}/{trigger_limit}")
 
                         # Check if silence is long enough to end utterance
-                        if silence_frames > 1500 // FRAME_MS:  # ~1.5 seconds of silence
-                            print(f"🤫 SILENCE: {silence_frames}/{1500 // FRAME_MS} | Buffer: {len(buf)} chunks")
+                        if silence_frames > trigger_limit:  # ~1.5 seconds of silence
+                            print(f"🤫 SILENCE: {silence_frames}/{trigger_limit} | Buffer: {len(buf)} chunks")
                             if speech_frames > 5:  # Minimum speech duration
                                 print("⚙️ STARTING PROCESSING PIPELINE...")
                                 await websocket.send_json(
@@ -297,9 +307,11 @@ async def websocket_audio_stream(websocket: WebSocket):
                                 full_audio = b"".join(buf)
 
                                 # Speaker verification
+                                print("🔍 Step 2: Checking speaker identity...")
                                 is_student = speaker_service.is_student_voice(full_audio)
 
                                 if is_student:
+                                    print("🚫 Student detected. Ignoring transcript.")
                                     await websocket.send_json(
                                         {
                                             "type": "status",
@@ -308,6 +320,7 @@ async def websocket_audio_stream(websocket: WebSocket):
                                     )
                                     buf, speech_frames, silence_frames, active = [], 0, 0, False
                                     continue
+                                print("👤 Target speaker verified. Moving to Transcription...")
 
                                 # Transcribe
                                 text = transcription_service.transcribe_from_bytes(

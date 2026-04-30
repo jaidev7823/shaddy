@@ -19,25 +19,35 @@ class VADService:
         """
         Detect speech probability in audio.
         """
+        print(f"🔍 VAD SERVICE DEBUG: Input tensor shape={audio_tensor.shape}, dtype={audio_tensor.dtype}")
+        print(f"🔍 VAD SERVICE DEBUG: Input stats - min={audio_tensor.min():.4f}, max={audio_tensor.max():.4f}, mean={audio_tensor.mean():.4f}")
+        
         # Silero VAD prefers specific chunk sizes like 512, 1024, or 1536.
         # Your frontend sends 4096. We'll slice it to 512 for a quick check.
         target_size = 512
         current_size = audio_tensor.shape[-1]
+        print(f"🔍 VAD SERVICE DEBUG: Original size={current_size}, target_size={target_size}")
 
         if current_size > target_size:
             audio_tensor = audio_tensor[:target_size]
+            print(f"🔍 VAD SERVICE DEBUG: Truncated tensor to size {audio_tensor.shape[-1]}")
         elif current_size < target_size:
             padding = target_size - current_size
             audio_tensor = torch.nn.functional.pad(audio_tensor, (0, padding))
+            print(f"🔍 VAD SERVICE DEBUG: Padded tensor from {current_size} to {audio_tensor.shape[-1]}")
 
         with torch.no_grad():
             # Ensure tensor is [1, 512]
             if audio_tensor.dim() == 1:
                 audio_tensor = audio_tensor.unsqueeze(0)
+                print(f"🔍 VAD SERVICE DEBUG: Added batch dimension, new shape={audio_tensor.shape}")
             
+            print(f"🔍 VAD SERVICE DEBUG: Calling Silero model with tensor shape={audio_tensor.shape}, sample_rate=16000")
             # Call the MODEL, not the SERVICE
             speech_prob = self.model(audio_tensor, 16000).item()
+            print(f"🔍 VAD SERVICE DEBUG: Model returned speech_prob={speech_prob:.6f}")
             
+        print(f"🔍 VAD SERVICE DEBUG: Final result - speech_prob={speech_prob:.4f}, threshold={threshold}, is_speech={speech_prob > threshold}")
         return speech_prob
 
 class SpeakerVerificationService:
