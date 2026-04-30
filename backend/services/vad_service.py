@@ -3,6 +3,14 @@
 import numpy as np
 import torch
 import os
+import wave
+
+def save_audio_bytes(audio_bytes: bytes, filename: str, sample_rate=16000):
+    with wave.open(filename, 'wb') as wf:
+        wf.setnchannels(1)       # mono
+        wf.setsampwidth(2)       # 16-bit audio (int16 = 2 bytes)
+        wf.setframerate(sample_rate)
+        wf.writeframes(audio_bytes)
 
 from silero_vad import load_silero_vad
 from backend.speaker_id import (
@@ -123,7 +131,6 @@ class SpeakerVerificationService:
             y = y.mean(axis=1)
         return torch.from_numpy(y).unsqueeze(0).to(self._get_model().device)
 
-
 class AudioProcessingService:
     """Combined VAD + Speaker Verification service."""
 
@@ -132,24 +139,25 @@ class AudioProcessingService:
         self.speaker = SpeakerVerificationService()
 
     def process_chunk(self, audio_bytes: bytes, vad_threshold=0.5, speaker_threshold=None):
-        """Process one audio chunk: VAD + Speaker Verification."""
         audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
         audio_tensor = torch.from_numpy(audio_np).unsqueeze(0)
-
+    
         speech_prob = self.vad.detect_speech(audio_tensor, threshold=vad_threshold)
-
+    
         if speech_prob > vad_threshold:
-            # We only perform speaker ID and print if speech is actually detected
+            # ✅ Save only when speech is detected
+            save_audio_bytes(audio_bytes, "output.wav")
+    
             similarity = self.speaker.get_speaker_similarity(audio_bytes)
             is_student = similarity > (speaker_threshold or self.speaker.threshold)
-            
+    
             return {
                 "has_speech": True,
                 "speech_prob": round(speech_prob, 4),
                 "is_student": is_student,
                 "similarity": round(similarity, 4)
             }
-        
+    
         return {
             "has_speech": False,
             "speech_prob": round(speech_prob, 4),

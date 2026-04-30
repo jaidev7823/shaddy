@@ -21,13 +21,17 @@ def main():
     student_embedding = get_student_embedding()
     print("Student voice enrolled.")
 
+    print("Initializing PyAudio...", flush=True)
     pa = pyaudio.PyAudio()
+    
+    print(f"Opening Stream (Rate: {MIC_RATE})...", flush=True)
     stream = pa.open(
         format=pyaudio.paInt16, channels=1,
         rate=MIC_RATE, input=True,
         frames_per_buffer=int(MIC_RATE * FRAME_MS / 1000)
     )
-    print("Listening... (Ctrl+C to stop)")
+    
+    print("Listening... (Ctrl+C to stop)", flush=True)
 
     buf, speech, silence, active = [], 0, 0, False
     audio_queue = get_queue()

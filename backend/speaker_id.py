@@ -1,6 +1,31 @@
 import torch
+import torchaudio
+import torchaudio.transforms as T
+
 import os
 from speechbrain.inference.speaker import SpeakerRecognition
+from speechbrain.dataio.dataio import read_audio
+import torch.nn.functional as F
+
+def verify_speaker(test_audio_path):
+    model = get_verification_model()
+    ref_embedding = get_student_embedding() # Ensure this is [1, 192]
+    
+    # 1. Load and ensure correct shape
+    test_signal = read_audio(test_audio_path)
+    if test_signal.ndim == 1:
+        test_signal = test_signal.unsqueeze(0)
+    
+    # 2. Get embedding
+    with torch.no_grad():
+        test_embedding = model.encode_batch(test_signal)
+    
+    # 3. Manual Cosine Similarity (mimicking SpeechBrain internal)
+    # SpeechBrain embeddings are usually [batch, time, feature] 
+    # We flatten to [batch, feature]
+    score = F.cosine_similarity(ref_embedding.flatten(), test_embedding.flatten(), dim=0)
+    
+    return score.item()
 
 # ====================== GLOBAL CACHE ======================
 _verification_model = None
@@ -49,8 +74,9 @@ def get_verification_model():
 
 from speechbrain.dataio.dataio import read_audio
 
+
 def get_student_embedding(force_reload=False):
-    """Load student reference voice embedding using SpeechBrain-compatible loader."""
+    """Load, resample, and enroll student voice embedding."""
     global _student_embedding
 
     if _student_embedding is not None and not force_reload:
@@ -59,23 +85,42 @@ def get_student_embedding(force_reload=False):
     voice_ref_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "audio", "my_voice_sample.wav")
     )
-
+    
     try:
         if not os.path.exists(voice_ref_path):
-            raise FileNotFoundError(f"Reference voice file not found: {voice_ref_path}")
+            print(f"❌ File not found: {voice_ref_path}")
+            return None
 
-        # 🔥 Use SpeechBrain loader instead of torchaudio
-        signal = read_audio(voice_ref_path)  # shape: [time]
+        # 1. Load with torchaudio to get the original Sample Rate (fs)
+        # Note: If this fails, run 'pip install pysoundfile'
+        signal, fs = torchaudio.load(voice_ref_path)
 
-        # Convert to [1, time]
-        signal = signal.unsqueeze(0)
+        # 2. Convert to Mono if Stereo
+        if signal.shape[0] > 1:
+            signal = signal.mean(dim=0, keepdim=True)
 
+        # 3. Auto-Resample to 16000 Hz if necessary
+        target_sample_rate = 16000
+        if fs != target_sample_rate:
+            print(f"🔄 Resampling reference from {fs}Hz to {target_sample_rate}Hz...")
+            resampler = T.Resample(orig_freq=fs, new_freq=target_sample_rate)
+            signal = resampler(signal)
+
+        # 4. Prepare for SpeechBrain Model
+        # Model expects shape: [batch, time]
         model = get_verification_model()
+        
+        # Ensure signal is on the same device as the model (CPU/CUDA)
+        signal = signal.to(model.device)
 
-        embedding = model.encode_batch(signal)
-        _student_embedding = embedding.squeeze(0).squeeze(0)
+        with torch.no_grad():
+            # encode_batch returns [batch, 1, embedding_size]
+            embedding = model.encode_batch(signal)
+            _student_embedding = embedding.squeeze(0).squeeze(0)
 
+        print(f"✅ Enrollment Successful! Reference is now normalized to 16kHz.")
         return _student_embedding
 
     except Exception as e:
+        print(f"⚠️ Enrollment failed: {e}")
         return None
