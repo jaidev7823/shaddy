@@ -322,7 +322,7 @@ async def websocket_audio_stream(websocket: WebSocket):
                                     similarity = (
                                         speaker_service.get_speaker_similarity(full_audio)
                                     )
-
+                                    print("speaker similarity", similarity)
                                     # Process with LLM
                                     llm_result = llm_service.process_transcript(text)
 
