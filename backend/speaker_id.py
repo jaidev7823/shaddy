@@ -30,7 +30,7 @@ def verify_speaker(test_audio_path):
 # ====================== GLOBAL CACHE ======================
 _verification_model = None
 _student_embedding = None
-_threshold = 0.24   # Good starting threshold for ECAPA model
+_threshold = 1   # Good starting threshold for ECAPA model
 
 def get_verification_model():
     """Load SpeechBrain ECAPA model **strictly from local folder**."""

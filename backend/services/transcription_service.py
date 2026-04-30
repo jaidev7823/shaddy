@@ -33,6 +33,7 @@ class TranscriptionService:
         Returns:
             Transcribed text
         """
+        print("transcription has been stareted")
         tmp = None
         try:
             # Write bytes to temporary WAV file
@@ -58,6 +59,7 @@ class TranscriptionService:
             )
 
             text = " ".join(s.text for s in segs).strip()
+            print(text)
             return text
 
         finally:
