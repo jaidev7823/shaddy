@@ -44,12 +44,13 @@ app.add_middleware(
 )
 
 # Initialize services
-vad_service = None
-speaker_service = None
-transcription_service = None
-llm_service = None
-tts_service = None
+vad_service = VADService()
+speaker_service = SpeakerVerificationService()
 
+# Instantiate the remaining services
+transcription_service = TranscriptionService() # Loads Whisper or similar
+llm_service = LLMService()                     # Connects to GPT/Claude
+tts_service = TTSService()                     # Initializes ElevenLabs/local TTS
 # Track cooldowns per lesson
 lesson_cooldowns: Dict[str, float] = {}
 
@@ -264,6 +265,7 @@ async def websocket_audio_stream(websocket: WebSocket):
                         speech_frames += 1
                         silence_frames = 0
                         active = True
+                        print(f"🎤 SPEECH: Prob {speech_prob:.3f} | Frames: {speech_frames}")
 
                         await websocket.send_json(
                             {
@@ -281,8 +283,9 @@ async def websocket_audio_stream(websocket: WebSocket):
 
                         # Check if silence is long enough to end utterance
                         if silence_frames > 1500 // FRAME_MS:  # ~1.5 seconds of silence
-                            if speech_frames > 12:  # Minimum speech duration
-
+                            print(f"🤫 SILENCE: {silence_frames}/{1500 // FRAME_MS} | Buffer: {len(buf)} chunks")
+                            if speech_frames > 5:  # Minimum speech duration
+                                print("⚙️ STARTING PROCESSING PIPELINE...")
                                 await websocket.send_json(
                                     {
                                         "type": "status",
@@ -382,6 +385,8 @@ async def websocket_audio_stream(websocket: WebSocket):
                                     await websocket.send_json(
                                         {"type": "response", "data": response_data}
                                     )
+                            else:
+                                print("⚠️ Speech too short, discarding buffer.")
 
                             # Reset for next utterance
                             buf, speech_frames, silence_frames, active = [], 0, 0, False

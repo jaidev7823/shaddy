@@ -19,29 +19,26 @@ class VADService:
         """
         Detect speech probability in audio.
         """
-        # --- THE FIX STARTS HERE ---
-        # Ensure the tensor is the correct size (512 for 16kHz)
+        # Silero VAD prefers specific chunk sizes like 512, 1024, or 1536.
+        # Your frontend sends 4096. We'll slice it to 512 for a quick check.
         target_size = 512
         current_size = audio_tensor.shape[-1]
 
-        if current_size != target_size:
-            if current_size < target_size:
-                # Pad with zeros if too small
-                padding = target_size - current_size
-                audio_tensor = torch.nn.functional.pad(audio_tensor, (0, padding))
-            else:
-                # Slice if too big (take the first 512)
-                audio_tensor = audio_tensor[:target_size]
-        # --- THE FIX ENDS HERE ---
+        if current_size > target_size:
+            audio_tensor = audio_tensor[:target_size]
+        elif current_size < target_size:
+            padding = target_size - current_size
+            audio_tensor = torch.nn.functional.pad(audio_tensor, (0, padding))
 
         with torch.no_grad():
-            # Ensure tensor has batch dimension: [512] -> [1, 512]
+            # Ensure tensor is [1, 512]
             if audio_tensor.dim() == 1:
                 audio_tensor = audio_tensor.unsqueeze(0)
-                
-            speech_prob = self.model(audio_tensor, VAD_RATE).item()
+            
+            # Call the MODEL, not the SERVICE
+            speech_prob = self.model(audio_tensor, 16000).item()
+            
         return speech_prob
-
 
 class SpeakerVerificationService:
     """Speaker verification service."""
