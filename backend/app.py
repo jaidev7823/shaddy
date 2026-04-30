@@ -4,6 +4,7 @@ import json
 import time
 import asyncio
 from typing import Dict
+import time
 
 import numpy as np
 import torch
@@ -12,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from backend.config import COOLDOWN, MIC_RATE, FRAME_MS, VAD_RATE
+from backend.config import COOLDOWN, MIC_RATE, FRAME_MS, VAD_RATE, TRIGGER_LIMIT
 from backend.schemas import (
     AudioProcessingResponse,
     LLMResponse,
@@ -42,6 +43,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+last_speech_time = None
 
 # Initialize services
 vad_service = VADService()
@@ -60,28 +62,13 @@ async def startup_event():
     """Initialize services on startup."""
     global vad_service, speaker_service, transcription_service, llm_service, tts_service
 
-    print("🚀 Initializing services...")
-
     try:
         vad_service = VADService()
-        print("✓ VAD service initialized")
-
         speaker_service = SpeakerVerificationService()
-        print("✓ Speaker verification service initialized")
-
         transcription_service = TranscriptionService()
-        print("✓ Transcription service initialized")
-
         llm_service = LLMService()
-        print("✓ LLM service initialized")
-
         tts_service = TTSService()
-        print("✓ TTS service initialized")
-
-        print("✅ All services ready!")
-
     except Exception as e:
-        print(f"❌ Startup error: {e}")
         raise
 
 @app.get("/health", response_model=HealthResponse)
@@ -135,10 +122,6 @@ async def process_audio_file(file: UploadFile = File(...)):
         is_student = speaker_service.is_student_voice(audio_bytes)
         similarity = speaker_service.get_speaker_similarity(audio_bytes)
 
-        print(f"Transcript: {text}")
-        print(f"Speaker is student: {is_student}")
-        print(f"Similarity: {similarity:.3f}")
-
         # Process with LLM
         llm_result = llm_service.process_transcript(text)
 
@@ -159,7 +142,6 @@ async def process_audio_file(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error processing audio: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -198,7 +180,6 @@ async def websocket_audio_stream(websocket: WebSocket):
     }
     """
     await websocket.accept()
-    print(f"🔗 WebSocket connection established")
 
     try:
         buf = []
@@ -225,11 +206,9 @@ async def websocket_audio_stream(websocket: WebSocket):
                 continue
 
             msg_type = data.get("type")
-            print(f"DEBUG: Received message type: {msg_type}") # <--- Check this
 
             if msg_type == "audio_chunk":
                 audio_b64 = data.get("data", {}).get("audio")
-                print(f"DEBUG: Audio string length: {len(audio_b64) if audio_b64 else 0}")
                 try:
                     import base64
 
@@ -258,22 +237,15 @@ async def websocket_audio_stream(websocket: WebSocket):
                     audio_tensor = torch.from_numpy(arr.astype(np.float32) / 32768.0)
 
                     # VAD detection
-                    print(f"🔍 VAD DEBUG: Running Silero VAD detection...")
-                    print(f"🔍 VAD DEBUG: Input tensor - shape={audio_tensor.shape}, dtype={audio_tensor.dtype}")
-                    print(f"🔍 VAD DEBUG: Input stats - min={audio_tensor.min():.4f}, max={audio_tensor.max():.4f}, mean={audio_tensor.mean():.4f}")
-                    
                     speech_prob = vad_service.detect_speech(audio_tensor)
-                    
-                    print(f"🔍 VAD DEBUG: Output speech_prob={speech_prob:.4f} (type: {type(speech_prob).__name__})")
-                    print(f"🔍 VAD DEBUG: Decision - speech_prob > 0.5? {speech_prob > 0.5}")
-                    print(f"🔍 VAD DEBUG: VAD service info - {type(vad_service).__name__}, model loaded: {vad_service.model is not None}")
 
                     if speech_prob > 0.5:
                         buf.append(audio_bytes)
                         speech_frames += 1
                         silence_frames = 0
                         active = True
-                        print(f"🎤 SPEECH: Prob {speech_prob:.3f} | Frames: {speech_frames}")
+                        print("user talking")
+                        last_speech_time = time.time()
 
                         await websocket.send_json(
                             {
@@ -288,14 +260,21 @@ async def websocket_audio_stream(websocket: WebSocket):
                     elif active:
                         buf.append(audio_bytes)
                         silence_frames += 1
-                        trigger_limit = 1500 // FRAME_MS
-                        print(f"🤫 [WAITING] Silence frames: {silence_frames}/{trigger_limit}")
+                        now = time.time()
 
+                        if last_speech_time is None:
+                            last_speech_time = now
+
+                        silence_duration = now - last_speech_time
+                        print(f"Silence duration: {silence_duration:.2f}s | frames: {silence_frames}")
+
+                        trigger_limit = 1.5 
+                        print("trigger",trigger_limit)
                         # Check if silence is long enough to end utterance
                         if silence_frames > trigger_limit:  # ~1.5 seconds of silence
-                            print(f"🤫 SILENCE: {silence_frames}/{trigger_limit} | Buffer: {len(buf)} chunks")
+                            print("Silence threshold reached (time-based)")
+                            print("user not talking for this time")
                             if speech_frames > 5:  # Minimum speech duration
-                                print("⚙️ STARTING PROCESSING PIPELINE...")
                                 await websocket.send_json(
                                     {
                                         "type": "status",
@@ -307,11 +286,10 @@ async def websocket_audio_stream(websocket: WebSocket):
                                 full_audio = b"".join(buf)
 
                                 # Speaker verification
-                                print("🔍 Step 2: Checking speaker identity...")
+                                print("checking is this student voice")
                                 is_student = speaker_service.is_student_voice(full_audio)
 
                                 if is_student:
-                                    print("🚫 Student detected. Ignoring transcript.")
                                     await websocket.send_json(
                                         {
                                             "type": "status",
@@ -320,7 +298,6 @@ async def websocket_audio_stream(websocket: WebSocket):
                                     )
                                     buf, speech_frames, silence_frames, active = [], 0, 0, False
                                     continue
-                                print("👤 Target speaker verified. Moving to Transcription...")
 
                                 # Transcribe
                                 text = transcription_service.transcribe_from_bytes(
@@ -398,14 +375,10 @@ async def websocket_audio_stream(websocket: WebSocket):
                                     await websocket.send_json(
                                         {"type": "response", "data": response_data}
                                     )
-                            else:
-                                print("⚠️ Speech too short, discarding buffer.")
 
-                            # Reset for next utterance
                             buf, speech_frames, silence_frames, active = [], 0, 0, False
 
                 except Exception as e:
-                    print(f"Error processing chunk: {e}")
                     await websocket.send_json(
                         {"type": "error", "data": {"message": str(e)}}
                     )
@@ -418,9 +391,8 @@ async def websocket_audio_stream(websocket: WebSocket):
                 break
 
     except WebSocketDisconnect:
-        print("🔌 WebSocket disconnected")
+        pass
     except Exception as e:
-        print(f"WebSocket error: {e}")
         try:
             await websocket.send_json(
                 {"type": "error", "data": {"message": f"Server error: {str(e)}"}}

@@ -27,6 +27,7 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 VOICE_REF = str(BASE / "audio/l_voice_sample.wav")
 SAMPLE_VOICE_STUDENT = str(BASE / "audio/my_voice_sample.wav") 
 LESSONS_PATH = BASE / "lessons/lessons.json"
+TRIGGER_LIMIT = 800 // FRAME_MS
 
 def get_lessons():
     return json.loads(LESSONS_PATH.read_text())
