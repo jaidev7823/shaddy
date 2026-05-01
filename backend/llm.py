@@ -69,6 +69,7 @@ def ask_gemini(transcript: str) -> dict:
     )
 
     text = response.text.strip()
+    print(f"DEBUG: Raw response: '{text}'")
 
     try:
         data = json.loads(text)
