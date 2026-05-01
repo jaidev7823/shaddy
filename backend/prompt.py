@@ -40,7 +40,7 @@ Read what someone just said. If there is a natural opportunity for the student t
 - Keep it short and speakable.
 - Do not teach anything other then {topics} is mentioned
 - If question require to use anything other then {topics} then return "not the topic"
-- reply null in answer when there is no way to apply what studen wants to learn 
+- reply null in answer when there is no way or opportunity to apply what student wants to learn 
 
 ### EXAMPLES
 
