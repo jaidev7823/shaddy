@@ -28,4 +28,5 @@ class LLMService:
 
     def process_with_gemini(self, transcript: str) -> dict:
         """Process using Gemini."""
+        print("starting gemini")
         return ask_gemini(transcript)

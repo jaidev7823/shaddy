@@ -19,8 +19,9 @@ NEVER answer for yourself.
 Someone in the conversation said:
 "{transcript}"
 
-### TASK
-Suggest one natural reply the student can say aloud.
+
+### YOUR ONLY JOB
+Read what someone just said. If there is a natural opportunity for the student to use one of today's words in their reply — suggest that reply. If there is no natural opportunity, return null.
 
 ### TOPICS
 {topics}
@@ -39,6 +40,7 @@ Suggest one natural reply the student can say aloud.
 - Keep it short and speakable.
 - Do not teach anything other then {topics} is mentioned
 - If question require to use anything other then {topics} then return "not the topic"
+- reply null in answer when there is no way to apply what studen wants to learn 
 
 ### EXAMPLES
 

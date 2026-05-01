@@ -360,17 +360,12 @@ async def websocket_audio_stream(websocket: WebSocket):
                                         lesson_cooldowns[lesson_id] = now
 
                                     # Generate TTS if nudging
-                                    if llm_result.get("should_nudge") and llm_result.get(
-                                        "nudge"
-                                    ):
-                                        nudge_text = (
-                                            llm_result["nudge"]
-                                            + " WHY: "
-                                            + (llm_result.get("why") or "")
-                                        )
+                                    # Generate TTS only if nudge exists and is not empty
+                                    nudge = llm_result.get("nudge")
+                                    if llm_result.get("should_nudge") and nudge:
+                                        nudge_text = nudge + " WHY: " + (llm_result.get("why") or "")
                                         tts_service.speak(nudge_text)
                                         response_data["audio_generated"] = True
-
                                     await websocket.send_json(
                                         {"type": "response", "data": response_data}
                                     )

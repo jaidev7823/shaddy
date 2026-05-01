@@ -55,16 +55,32 @@ def ask_ollama(transcript: str) -> dict:
     return _parse_ollama(content)
 
 def ask_gemini(transcript: str) -> dict:
+    print("using gemini to talk")
     from google import genai
+
     client = genai.Client(api_key=GEMINI_API_KEY)
-    r = client.models.generate_content(
+
+    response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=build_prompt(transcript),
-        config={"response_mime_type": "application/json"}
+        config={
+            "response_mime_type": "application/json"
+        }
     )
-    p = r.parsed
-    return _result(p.answer, p.lesson_id, p.why)
 
+    text = response.text.strip()
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        print("Invalid JSON from Gemini:", text)
+        return _EMPTY
+
+    return _result(
+        data.get("answer", ""),
+        data.get("lesson_id"),
+        data.get("why")
+    )
 
 def ask_llm(transcript: str) -> dict:
     try:
