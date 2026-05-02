@@ -12,5 +12,12 @@ whisper = WhisperModel(
     device="cuda",
     compute_type="float16"
 )
-tts = ChatterboxTurboTTS.from_pretrained(device=DEVICE)
 
+# Use medium model directly (downloads automatically if not cached)
+# whisper = WhisperModel(
+#     "medium",
+#     device="cuda",
+#     compute_type="float16"
+# )
+
+tts = ChatterboxTurboTTS.from_pretrained(device=DEVICE)

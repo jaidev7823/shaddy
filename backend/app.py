@@ -268,7 +268,7 @@ async def websocket_audio_stream(websocket: WebSocket):
                         silence_duration = now - last_speech_time
                         print(f"Silence duration: {silence_duration:.2f}s | frames: {silence_frames}")
 
-                        trigger_limit = 6 
+                        trigger_limit = 2 
                         # Check if silence is long enough to end utterance
                         if silence_frames > trigger_limit:  # ~1.5 seconds of silence
                             print("Silence threshold reached (time-based)")
