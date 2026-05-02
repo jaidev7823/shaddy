@@ -1,19 +1,10 @@
 """FastAPI application for Shady audio processing service."""
 
-import json
-import time
-import asyncio
-from typing import Dict
-import time
-
-import numpy as np
-import torch
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
+from fastapi import FastAPI, WebSocket, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from backend.config import COOLDOWN, MIC_RATE, FRAME_MS, VAD_RATE, TRIGGER_LIMIT
 from backend.schemas import (
     AudioProcessingResponse,
     LLMResponse,
@@ -27,6 +18,7 @@ from backend.services import (
     LLMService,
     TTSService,
 )
+from backend.websocket.handler import websocket_audio_stream as ws_handler
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -43,19 +35,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-last_speech_time = None
 
 # Initialize services
 vad_service = VADService()
 speaker_service = SpeakerVerificationService()
-
-# Instantiate the remaining services
-transcription_service = TranscriptionService() # Loads Whisper or similar
-llm_service = LLMService()                     # Connects to GPT/Claude
-tts_service = TTSService()                     # Initializes ElevenLabs/local TTS
-# Track cooldowns per lesson
-lesson_cooldowns: Dict[str, float] = {}
-
+transcription_service = TranscriptionService()
+llm_service = LLMService()
+tts_service = TTSService()
 
 @app.on_event("startup")
 async def startup_event():
@@ -160,240 +146,16 @@ async def get_generated_audio():
 # WEBSOCKET ENDPOINT
 
 @app.websocket("/ws/audio")
-async def websocket_audio_stream(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time audio streaming.
-
-    Expected message format:
-    {
-        "type": "audio_chunk",
-        "data": {
-            "audio": "<base64 encoded audio bytes>",
-            "sample_rate": 16000
-        }
-    }
-
-    Response format:
-    {
-        "type": "status|response|error",
-        "data": {...}
-    }
-    """
-    await websocket.accept()
-
-    try:
-        buf = []
-        speech_frames = 0
-        silence_frames = 0
-        active = False
-
-        while True:
-            # Receive message
-            try:
-                msg = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
-            except asyncio.TimeoutError:
-                await websocket.send_json(
-                    {"type": "status", "data": {"message": "Timeout - no data received"}}
-                )
-                continue
-
-            try:
-                data = json.loads(msg)
-            except json.JSONDecodeError:
-                await websocket.send_json(
-                    {"type": "error", "data": {"message": "Invalid JSON"}}
-                )
-                continue
-
-            msg_type = data.get("type")
-
-            if msg_type == "audio_chunk":
-                audio_b64 = data.get("data", {}).get("audio")
-                try:
-                    import base64
-
-                    audio_data = data.get("data", {})
-                    audio_b64 = audio_data.get("audio")
-
-                    if not audio_b64:
-                        await websocket.send_json(
-                            {
-                                "type": "error",
-                                "data": {"message": "No audio data in chunk"},
-                            }
-                        )
-                        continue
-
-                    # Decode base64 audio
-                    audio_bytes = base64.b64decode(audio_b64)
-                    if len(audio_bytes) % 2 != 0:
-                        # Remove the trailing odd byte so it doesn't crash the converter
-                        audio_bytes = audio_bytes[:-1]
-                    if not audio_bytes:
-                        continue
-                    
-                    # Convert to numpy array
-                    arr = np.frombuffer(audio_bytes, dtype=np.int16)
-                    audio_tensor = torch.from_numpy(arr.astype(np.float32) / 32768.0)
-
-                    # VAD detection
-                    speech_prob = vad_service.detect_speech(audio_tensor)
-
-                    if speech_prob > 0.5:
-                        buf.append(audio_bytes)
-                        speech_frames += 1
-                        silence_frames = 0
-                        active = True
-                        print("user talking")
-                        last_speech_time = time.time()
-
-                        await websocket.send_json(
-                            {
-                                "type": "status",
-                                "data": {
-                                    "state": "listening",
-                                    "speech_prob": speech_prob,
-                                },
-                            }
-                        )
-
-                    elif active:
-                        buf.append(audio_bytes)
-                        silence_frames += 1
-                        now = time.time()
-
-                        if last_speech_time is None:
-                            last_speech_time = now
-
-                        silence_duration = now - last_speech_time
-                        print(f"Silence duration: {silence_duration:.2f}s | frames: {silence_frames}")
-
-                        trigger_limit = 2 
-                        # Check if silence is long enough to end utterance
-                        if silence_frames > trigger_limit:  # ~1.5 seconds of silence
-                            print("Silence threshold reached (time-based)")
-                            print("user not talking for this time")
-                            if speech_frames > 0.5:  # Minimum speech duration
-                                await websocket.send_json(
-                                    {
-                                        "type": "status",
-                                        "data": {"state": "processing"},
-                                    }
-                                )
-
-                                # Combine audio chunks
-                                full_audio = b"".join(buf)
-
-                                # Speaker verification
-                                print("checking is this student voice")
-                                is_student = speaker_service.is_student_voice(full_audio)
-
-                                if is_student:
-                                    await websocket.send_json(
-                                        {
-                                            "type": "status",
-                                            "data": {"message": "Student voice detected, skipping"},
-                                        }
-                                    )
-                                    buf, speech_frames, silence_frames, active = [], 0, 0, False
-                                    continue
-
-                                # Transcribe
-                                text = transcription_service.transcribe_from_bytes(
-                                    full_audio
-                                )
-
-                                if not text:
-                                    await websocket.send_json(
-                                        {
-                                            "type": "status",
-                                            "data": {"message": "Could not transcribe"},
-                                        }
-                                    )
-                                else:
-                                    await websocket.send_json(
-                                        {
-                                            "type": "status",
-                                            "data": {"state": "transcribed", "text": text},
-                                        }
-                                    )
-
-                                    # Get speaker similarity
-                                    similarity = (
-                                        speaker_service.get_speaker_similarity(full_audio)
-                                    )
-                                    print("speaker similarity", similarity)
-                                    # Process with LLM
-                                    llm_result = llm_service.process_transcript(text)
-
-                                    response_data = {
-                                        "transcript": text,
-                                        "speaker_similarity": similarity,
-                                        "llm_response": llm_result,
-                                    }
-
-                                    # Check cooldown
-                                    lesson_id = llm_result.get("lesson_id")
-                                    if lesson_id:
-                                        now = time.time()
-                                        if (
-                                            now - lesson_cooldowns.get(lesson_id, 0)
-                                        ) < COOLDOWN:
-                                            response_data["cooldown_active"] = True
-                                            response_data["should_nudge"] = False
-
-                                            await websocket.send_json(
-                                                {
-                                                    "type": "response",
-                                                    "data": response_data,
-                                                }
-                                            )
-
-                                            buf, speech_frames, silence_frames, active = (
-                                                [],
-                                                0,
-                                                0,
-                                                False,
-                                            )
-                                            continue
-
-                                        lesson_cooldowns[lesson_id] = now
-
-                                    # Generate TTS if nudging
-                                    # Generate TTS only if nudge exists and is not empty
-                                    nudge = llm_result.get("nudge")
-                                    if llm_result.get("should_nudge") and nudge:
-                                        nudge_text = nudge + " WHY: " + (llm_result.get("why") or "")
-                                        tts_service.speak(nudge_text)
-                                        response_data["audio_generated"] = True
-                                    await websocket.send_json(
-                                        {"type": "response", "data": response_data}
-                                    )
-                            else:
-                                print("Ignored short speech") 
-                            buf, speech_frames, silence_frames, active = [], 0, 0, False
-
-                except Exception as e:
-                    await websocket.send_json(
-                        {"type": "error", "data": {"message": str(e)}}
-                    )
-
-            elif msg_type == "ping":
-                await websocket.send_json({"type": "pong"})
-
-            elif msg_type == "close":
-                await websocket.send_json({"type": "status", "data": {"message": "Closing connection"}})
-                break
-
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        try:
-            await websocket.send_json(
-                {"type": "error", "data": {"message": f"Server error: {str(e)}"}}
-            )
-        except:
-            pass
+async def websocket_audio_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time audio streaming."""
+    await ws_handler(
+        websocket,
+        vad_service,
+        speaker_service,
+        transcription_service,
+        llm_service,
+        tts_service,
+    )
 
 
 # ============================================================================
