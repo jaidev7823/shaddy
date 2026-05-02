@@ -45,7 +45,10 @@ def main():
                 speech_prob = model(audio_tensor, VAD_RATE).item()
 
             if speech_prob > 0.5:
-                buf.append(raw); speech += 1; silence = 0; active = True
+                if state.processing:
+                    state.cancel_current = True  # signal pipeline to stop
+                    print("  (cancelled — new speech detected)")
+                state.buf.append(audio_bytes)
             elif active:
                 buf.append(raw); silence += 1
                 if silence > 1500 // FRAME_MS:

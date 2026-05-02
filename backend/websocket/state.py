@@ -8,3 +8,5 @@ class SessionState:
         self.silence_frames = 0
         self.active = False
         self.last_speech_time = None
+        self.processing = False
+        self.cancel_current = False
