@@ -167,7 +167,7 @@ class Pipeline:
             result["nudge_text"] = nudge + " WHY: " + (result["llm_result"].get("why") or "")
             t = time.perf_counter()
             result["audio_generated"] = self.tts_service.speak(result["nudge_text"])
-            times["tts"] = round(time.perf_counter() - t, 3)
+            times["tts_generate"] = round(time.perf_counter() - t, 3)
             response_data["audio_generated"] = result["audio_generated"]
         
         times["total"] = round(time.perf_counter() - t_total, 3)
