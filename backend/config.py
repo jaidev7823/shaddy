@@ -21,7 +21,7 @@ COOLDOWN = 10
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 PROVIDER = os.environ.get("LLM_PROVIDER", "ollama").lower()
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:latest")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "phi3:mini")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 VOICE_REF = str(BASE / "audio/l_voice_sample.wav")

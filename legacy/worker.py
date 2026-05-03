@@ -71,7 +71,7 @@ def worker():
                 continue
 
             print(f"  → nudge: {nudge}")
-            nudges = nudge + "WHY:" + why 
+            nudges = nudge
             speak(nudges)
 
             if lesson_id:

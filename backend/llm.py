@@ -2,6 +2,7 @@ import json
 from backend.config import PROVIDER, OLLAMA_MODEL, GEMINI_MODEL, GEMINI_API_KEY, get_lessons
 from backend.prompt import build_prompt
 import ollama
+import re
 
 def _result(answer: str, lesson_id: str, why: str) -> dict:
     return {
@@ -13,22 +14,20 @@ def _result(answer: str, lesson_id: str, why: str) -> dict:
 
 _EMPTY = {"should_nudge": False, "lesson_id": None, "nudge": None, "why": None}
 
+
+
 def _parse_ollama(response: str) -> dict:
-    print(f"DEBUG: Raw response from LLM: '{response}'")
+    print(f"DEBUG: Raw response: '{response}'")
+
     if not response or not response.strip():
-        print("empty")
         return _EMPTY
 
     raw = response.strip()
-    if raw.startswith("```"):
-        parts = raw.split("```")
-        if len(parts) > 1:
-            raw = parts[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
 
-    raw = raw.strip()
-
+    # Extract JSON object only
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if match:
+        raw = match.group(0)
 
     try:
         data = json.loads(raw)
@@ -36,12 +35,17 @@ def _parse_ollama(response: str) -> dict:
         print("Invalid JSON from Ollama:", raw)
         return _EMPTY
 
-    return _result(
-        data.get("answer", ""),
-        data.get("lesson_id"),
-        data.get("why")
-    )
+    answer = data.get("answer")
 
+    # HARD GUARD: answer must be single word or None
+    if not answer or not isinstance(answer, str) or " " in answer:
+        answer = None
+
+    return _result(
+        answer,
+        data.get("lesson_id") if answer else None,
+        data.get("why") if answer else None
+    )
 
 def ask_ollama(transcript: str) -> dict:
     # Use generate instead of chat to simplify the request structure
