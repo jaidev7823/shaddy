@@ -4,6 +4,32 @@ import numpy as np
 import torch
 import os
 import wave
+import time
+
+def save_audio_separately(audio_bytes: bytes, base_folder="audio/saved_audio", sample_rate=16000):
+    """
+    Save audio to a separate folder without touching existing logic.
+    Returns file path.
+    """
+    print("printing")
+    # Use absolute path based on project root
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_folder = os.path.join(project_root, base_folder)
+    os.makedirs(base_folder, exist_ok=True)
+
+    # unique filename
+    filename = f"audio_{int(time.time() * 1000)}.wav"
+    filepath = os.path.join(base_folder, filename)
+
+    with wave.open(filepath, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(audio_bytes)
+
+    print("file", filepath)
+
+    return filepath
 
 def save_audio_bytes(audio_bytes: bytes, filename: str, sample_rate=16000):
     with wave.open(filename, 'wb') as wf:
@@ -147,6 +173,8 @@ class AudioProcessingService:
         if speech_prob > vad_threshold:
             # ✅ Save only when speech is detected
             save_audio_bytes(audio_bytes, "output.wav")
+            print("working")
+            save_audio_separately(audio_bytes, base_folder="audio/saved_audio/session_1")
     
             similarity = self.speaker.get_speaker_similarity(audio_bytes)
             is_student = similarity > (speaker_threshold or self.speaker.threshold)
