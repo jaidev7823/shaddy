@@ -3,10 +3,13 @@ from backend.config import get_lessons
 def build_prompt(transcript: str) -> str:
 
     lessons = get_lessons()
-    
+    word = "\n".join(f'{l["id"]}: {l["topic"]}' for l in lessons)
+
+    print("word",word) 
     return f"""You are a silent vocabulary spotter. Not a chatbot. Not an assistant.
 
 Today's user want to learn: {get_lessons}
+This is the word you have to follow not words in Examples those are for you to undersatand above ones what user want to to learn
 
 Someone just said: "{transcript}"
 
@@ -17,12 +20,13 @@ If NO — return JSON with null as the answer.
 
 Examples:
 Input: "What did you do this weekend?"
-Today's words: entertainment, effort, curious
-Output: {{"lesson_id": "VOCAB-01", "answer": "entertainment", "why": "fits naturally as a reply topic"}}
+Today's words: {word}
+Output: {{"lesson_id": "VOCAB-01", "answer": "Resilient", "why": "fits naturally as a reply topic"}}
 
 Input: "Please pass the water"
-Today's words: entertainment, effort, curious
+Today's words: {word}
 Output: {{"lesson_id": null, "answer": null, "why": null}}
+
 
 STRICT Rules:
 - answer must be ONE word from today's list or null

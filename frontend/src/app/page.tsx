@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
-
+console.log(navigator.mediaDevices)
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://192.168.0.105:8000";
+console.log(WS_URL)
 interface AudioMessage {
   type: "audio_chunk" | "ping" | "close";
   data?: {
@@ -52,9 +52,10 @@ function floatTo16BitPCM(input: Float32Array) {
 
 // Add this helper function outside your component
 async function startRecording() {
+  console.log("working")
+
   setError(null);
   setStatus("Initializing...");
-
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     // Force 16kHz to match your backend VAD/Whisper models
@@ -64,6 +65,7 @@ async function startRecording() {
     // 4096 samples at 16kHz is ~250ms of audio per chunk
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
+    console.log("clicked")
     const ws = new WebSocket(`${WS_URL}/ws/audio`);
     webSocketRef.current = ws;
 
