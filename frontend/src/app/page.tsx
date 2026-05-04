@@ -52,14 +52,12 @@ function floatTo16BitPCM(input: Float32Array) {
 
 // Add this helper function outside your component
 async function startRecording() {
-  console.log("working")
-
   setError(null);
   setStatus("Initializing...");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     // Force 16kHz to match your backend VAD/Whisper models
-    const audioContext = new AudioContext({ sampleRate: 16000 }); 
+    const audioContext = new AudioContext(); 
     const source = audioContext.createMediaStreamSource(stream);
     
     // 4096 samples at 16kHz is ~250ms of audio per chunk
@@ -91,7 +89,7 @@ async function startRecording() {
           type: "audio_chunk",
           data: {
             audio: base64Audio,
-            sample_rate: 16000
+            sample_rate: audioContext.sampleRate
           }
         }));
       }

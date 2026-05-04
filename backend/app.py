@@ -26,11 +26,16 @@ app = FastAPI(
     description="Real-time audio processing with VAD, speaker verification, transcription, and LLM",
     version="1.0.0",
 )
+origins = [
+    "https://unrequited-tierra-nondiverging.ngrok-free.dev", # Your ngrok URL
+    "http://localhost:3000",                                # Your local frontend
+    "http://192.168.0.105:3000",
+]
 
 # Add CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
