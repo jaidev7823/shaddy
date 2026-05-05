@@ -55,7 +55,13 @@ async function startRecording() {
   setError(null);
   setStatus("Initializing...");
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:{
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,  // this boosts low volume automatically
+        channelCount: 1
+      } 
+    });
     // Force 16kHz to match your backend VAD/Whisper models
     const audioContext = new AudioContext(); 
     const source = audioContext.createMediaStreamSource(stream);
@@ -96,11 +102,17 @@ async function startRecording() {
     };
 
     source.connect(processor);
-    processor.connect(audioContext.destination);
+    
+    // Create a silent gain node to keep the processor alive without feedback
+    const silentGain = audioContext.createGain();
+    silentGain.gain.value = 0;
+    processor.connect(silentGain);
+    silentGain.connect(audioContext.destination);
 
     // Keep references for cleanup
     (window as any).audioStream = stream;
     (window as any).audioContext = audioContext;
+    (window as any).audioProcessor = processor;
     
     setIsRecording(true);
     setStatus("Recording...");

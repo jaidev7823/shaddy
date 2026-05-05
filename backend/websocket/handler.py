@@ -77,8 +77,9 @@ async def websocket_audio_stream(
 async def handle_audio_chunk(websocket, data, state, audio_processor, pipeline, background_tasks):
     audio_data = data.get("data", {})
     audio_b64 = audio_data.get("audio")
+    sample_rate = audio_data.get("sample_rate", 16000)
     
-    chunk_result, error = audio_processor.process_chunk(audio_b64)
+    chunk_result, error = audio_processor.process_chunk(audio_b64, sample_rate)
     if error:
         await websocket.send_json(generic_error(error))
         return
@@ -112,7 +113,7 @@ async def handle_audio_chunk(websocket, data, state, audio_processor, pipeline, 
         silence_duration = now - state.last_speech_time
         print(f"Silence duration: {silence_duration:.2f}s | frames: {state.silence_frames}")
         
-        if state.silence_frames > 4:
+        if state.silence_frames > 13:
             print("Silence threshold reached")
             
             if state.speech_frames > 0.5:

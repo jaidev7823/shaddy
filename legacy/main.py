@@ -44,7 +44,7 @@ def main():
             with torch.no_grad():
                 speech_prob = model(audio_tensor, VAD_RATE).item()
 
-            if speech_prob > 0.5:
+            if speech_prob > 0.7:
                 if state.processing:
                     state.cancel_current = True  # signal pipeline to stop
                     print("  (cancelled — new speech detected)")
