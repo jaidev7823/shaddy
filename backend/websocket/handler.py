@@ -113,7 +113,7 @@ async def handle_audio_chunk(websocket, data, state, audio_processor, pipeline, 
         silence_duration = now - state.last_speech_time
         print(f"Silence duration: {silence_duration:.2f}s | frames: {state.silence_frames}")
         
-        if state.silence_frames > 13:
+        if state.silence_frames > 1:
             print("Silence threshold reached")
             
             if state.speech_frames > 0.5:
@@ -134,7 +134,6 @@ async def handle_audio_chunk(websocket, data, state, audio_processor, pipeline, 
                 state.reset()
 
 async def process_and_respond(websocket, pipeline, full_audio, state):
-    """Process utterance in background and send response."""
     try:
         pipeline_result = await pipeline.process_utterance(full_audio, state)
         
@@ -145,10 +144,33 @@ async def process_and_respond(websocket, pipeline, full_audio, state):
         if not pipeline_result["transcript"]:
             await websocket.send_json(transcription_failed_status())
             return
-        
+
+        # 1. Send the JSON metadata first (Transcript & LLM text)
         await websocket.send_json(transcribed_status(pipeline_result["transcript"]))
         await websocket.send_json(response_message(pipeline_result["response_data"]))
+        
+        # 2. Start streaming the audio binary chunks immediately
+        nudge_text = pipeline_result["response_data"].get("nudge", "")
+        if nudge_text:
+            print(f"🔊 Streaming TTS for: {nudge_text[:50]}...")
+            chunk_count = 0
+            try:
+                async for chunk in pipeline.tts_service.stream_audio(nudge_text):
+                    chunk_count += 1
+                    # Send raw bytes. No JSON, No Base64.
+                    await websocket.send_bytes(chunk)
+                print(f"✅ TTS streaming complete. Sent {chunk_count} chunks.")
+            except Exception as tts_error:
+                print(f"❌ TTS Streaming Error: {tts_error}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("ℹ️ No nudge text to stream")
+
     except Exception as e:
+        print(f"❌ Processing Error: {e}")
+        import traceback
+        traceback.print_exc()
         await websocket.send_json(generic_error(f"Processing error: {str(e)}"))
     finally:
         state.processing = False

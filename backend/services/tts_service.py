@@ -1,51 +1,68 @@
-import asyncio
-import edge_tts
-from pydub import AudioSegment
+import wave
 from io import BytesIO
+from piper import PiperVoice
+import numpy as np
 
 class TTSService:
     def __init__(self):
-        self.voice = "en-IN-NeerjaNeural"
+        self.model_path = "backend/models/en_US-lessac-medium.onnx"
+        self.voice = PiperVoice.load(self.model_path)
+
         self.output_path = "/tmp/tts_output.wav"
-    
-    async def generate_audio(self, text: str) -> bytes:
-        """Generate audio and return as WAV bytes"""
+
+    async def stream_audio(self, text: str):
+        """Yields raw PCM audio chunks (Int16) as they are generated."""
         try:
-            communicate = edge_tts.Communicate(text, voice=self.voice)
+            # Piper's synthesize() returns a generator of AudioChunk objects
+            # Each AudioChunk has audio_int16_bytes attribute with raw PCM data
+            # We yield smaller chunks for better streaming performance
+            chunk_size = 4096  # bytes per chunk (2048 Int16 samples)
             
-            audio_bytes = b""
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    audio_bytes += chunk["data"]
-            
-            if not audio_bytes:
-                print("❌ TTS: No audio generated from edge-tts")
-                return b""
-            
-            # Convert MP3 to WAV for better browser compatibility
-            audio = AudioSegment.from_file(BytesIO(audio_bytes), format="mp3")
-            # Export as WAV bytes
-            wav_buffer = BytesIO()
-            audio.export(wav_buffer, format="wav")
-            wav_bytes = wav_buffer.getvalue()
-            
-            return wav_bytes
+            for audio_chunk in self.voice.synthesize(text):
+                if not audio_chunk or not hasattr(audio_chunk, 'audio_int16_bytes'):
+                    continue
+                
+                pcm_bytes = audio_chunk.audio_int16_bytes
+                if not pcm_bytes:
+                    continue
+                
+                # Split large chunks into smaller ones for streaming
+                for i in range(0, len(pcm_bytes), chunk_size):
+                    yield pcm_bytes[i:i+chunk_size]
         except Exception as e:
-            print(f"❌ TTS Generation Error: {e}")
+            print(f"❌ TTS Stream Error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    async def generate_audio(self, text: str) -> bytes:
+        """Generate WAV audio bytes using Piper"""
+
+        try:
+            wav_buffer = BytesIO()
+
+            # Piper writes directly into WAV file object
+            with wave.open(wav_buffer, "wb") as wav_file:
+                self.voice.synthesize_wav(text, wav_file)
+
+            wav_bytes = wav_buffer.getvalue()
+
+            if not wav_bytes:
+                print("❌ Piper: No audio generated")
+                return b""
+
+            return wav_bytes
+
+        except Exception as e:
+            print(f"❌ Piper TTS Generation Error: {e}")
             return b""
-    
-    async def speak(self, text: str) -> bool:
-        """Generate audio and save to output_path for compatibility"""
+
+    async def speak(self, text: str) -> bytes:
+        """Generate audio and return bytes directly"""
         try:
             audio_bytes = await self.generate_audio(text)
             if not audio_bytes:
-                return False
-            
-            # Save to output_path for the /audio/generated endpoint
-            with open(self.output_path, "wb") as f:
-                f.write(audio_bytes)
-            
-            return True
+                return b""
+            return audio_bytes
         except Exception as e:
-            print(f"❌ TTS Error: {e}")
-            return False
+            print(f"❌ Piper TTS Error: {e}")
+            return b""

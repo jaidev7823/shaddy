@@ -70,6 +70,48 @@ export default function Recorder() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const webSocketRef = useRef<WebSocket | null>(null);
 
+const audioCtxRef = useRef<AudioContext | null>(null);
+const nextPlayTimeRef = useRef(0);
+
+const processAudioQueue = async () => {
+    if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioContext({
+            sampleRate: 22050,
+            latencyHint: "interactive",
+        });
+    }
+
+    const audioCtx = audioCtxRef.current;
+
+    while (audioQueue.current.length > 0) {
+        const pcmData = audioQueue.current.shift()!;
+
+        const buffer = audioCtx.createBuffer(
+            1,
+            pcmData.length,
+            22050
+        );
+
+        const channel = buffer.getChannelData(0);
+
+        for (let i = 0; i < pcmData.length; i++) {
+            channel[i] = pcmData[i] / 32768;
+        }
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+
+        if (nextPlayTimeRef.current < audioCtx.currentTime) {
+            nextPlayTimeRef.current = audioCtx.currentTime;
+        }
+
+        source.start(nextPlayTimeRef.current);
+
+        nextPlayTimeRef.current += buffer.duration;
+    }
+};
+
   useEffect(() => {
     return () => {
       if (webSocketRef.current && webSocketRef.current.readyState === WebSocket.OPEN) {
@@ -118,35 +160,36 @@ function floatTo16BitPCM(input: Float32Array) {
             ws.onopen = () => {
                 setStatus("Connected & Streaming");
                 console.log("WebSocket opened successfully");
+                // Set binary type to arraybuffer for easier handling
+                ws.binaryType = 'arraybuffer';
             };
 
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('Received message:', data);
-                    
-                    // Handle audio data in response
-                    if (data.type === "response" && data.data?.audio_data) {
-                        // Decode base64 audio data and play it
-                        const audioBytes = base64ToArrayBuffer(data.data.audio_data);
-                        playAudio(audioBytes, data.data.audio_format || "wav");
-                        
-                        // Update UI with response data
-                        setResponse(data);
-                        setTranscript(data.data.transcript || "");
-                        setLLMResponse(data.data.llm_response || null);
-                    } else {
-                        // Handle other message types
-                        setResponse(data);
-                        if (data.type === "transcribed" && data.data?.text) {
-                            setTranscript(data.data.text);
+            ws.onmessage = async (event) => {
+                // If the data is binary (the audio chunks)
+                if (event.data instanceof ArrayBuffer) {
+                    const pcm16 = new Int16Array(event.data);
+                    audioQueue.current.push(pcm16);
+                    processAudioQueue(); // Start playing if not already playing
+                } else if (event.data instanceof Blob) {
+                    // Fallback for browsers that don't support binaryType = 'arraybuffer'
+                    const arrayBuffer = await event.data.arrayBuffer();
+                    const pcm16 = new Int16Array(arrayBuffer);
+                    audioQueue.current.push(pcm16);
+                    processAudioQueue();
+                } else {
+                    // If the data is JSON (metadata/status)
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === "response") {
+                            setResponse(data);
+                            setLLMResponse(data.data.llm_response || null);
+                        } else if (data.type === "status") {
+                            setStatus(data.data.state || data.data.message);
+                            if (data.data.text) setTranscript(data.data.text);
                         }
-                        if (data.data?.llm_response) {
-                            setLLMResponse(data.data.llm_response);
-                        }
+                    } catch (e) {
+                        console.error("JSON Parse Error", e);
                     }
-                } catch (error) {
-                    console.error("Error processing WebSocket message:", error);
                 }
             };
 
