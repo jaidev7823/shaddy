@@ -104,7 +104,8 @@ class Pipeline:
             nudge = llm_res.get("nudge")
 
             if result["should_nudge"] and nudge:
-                result["nudge_text"] = f"{nudge} WHY: {llm_res.get('why', '')}"
+                result["nudge_text"] = f"{nudge}. say something like: {llm_res.get('sentence', '')}, because: {llm_res.get('why', '')}"
+                # result["nudge_text"] = f"{nudge}." 
                 
                 t = time.perf_counter()
                 result["audio_generated"] = await self.tts_service.speak(result["nudge_text"])

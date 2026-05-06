@@ -1,47 +1,49 @@
 from backend.config import get_lessons
 
 def build_prompt(transcript: str) -> str:
-
     lessons = get_lessons()
     word = "\n".join(f'{l["id"]}: {l["topic"]}' for l in lessons)
 
-    print("word",word) 
-    return f"""You are a silent english teacher. Not a chatbot. Not an assistant.
+    return f"""You are a silent vocabulary spotter.
 
-Today's user want to learn: {get_lessons}
-This is the english concept you have to follow not words in Examples those are for you to undersatand above ones what user want to to learn
+Today's user wants to learn:
+{word}
 
 Someone just said: "{transcript}"
 
-Can the student naturally use this concept in their reply?
+Can the student naturally use one of today's words in their reply?
 
-If YES — return JSON with that good reply as the answer.
-If NO — return JSON with null as the answer.
+If YES — return JSON with:
+- the word
+- a short natural sentence using that word
+- a short reason
 
-Examples:
-Input: "What did you do this weekend?"
-Today's concept: {word}
-Output: {{"lesson_id": "VOCAB-01", "answer": "I was in goa", "why": "fits naturally as a reply topic"}}
-
-Input: "Please pass the water"
-Today's words: {word}
-Output: {{"lesson_id": null, "answer": null, "why": null}}
-
+If NO — return JSON with nulls.
 
 STRICT Rules:
-- answer must be ONE small sentence from today's concept or null
-- No full paragraph in answer
-- No explanation outside the JSON
-- If not 100% sure the concept fits — return null
-- Silence is better than a forced suggestion
-- If there is no way to use the word user want then reply NULL nothing else 
-- NO ANSWER SHOULD BE MORE THEN one word
-- If answer is null there is no need for give reason why
-- Do not reply in any other json formate every
+- answer must be ONE word from today's list or null
+- sentence must be a short natural reply using that word
+- why must be short (few words only)
+- If answer is null → sentence and why must also be null
+- No explanation outside JSON
+- If not 100% sure → return null
+- Do not force usage
+- The sentence MUST contain the exact answer word (case-insensitive)
+- If the word is not present → return null for all fields
+
+BAD:
+answer: "Pragmatic"
+sentence: "I try to be practical."
+→ INVALID (word missing)
+
+GOOD:
+answer: "Pragmatic"
+sentence: "I'm pragmatic about my friendships."
 
 ### OUTPUT — valid JSON only:
 {{
   "lesson_id": "string or null",
   "answer": "string or null",
+  "sentence": "string or null",
   "why": "string or null"
 }}"""

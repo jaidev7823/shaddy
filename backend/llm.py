@@ -4,17 +4,16 @@ from backend.prompt import build_prompt
 import ollama
 import re
 
-def _result(answer: str, lesson_id: str, why: str) -> dict:
+def _result(answer: str, lesson_id: str, why: str, sentence: str) -> dict:
     return {
-        "should_nudge": bool(answer and answer.upper() != "NONE" and len(answer) > 2),
+        "should_nudge": bool(answer and answer.upper() not in ("NONE", "NULL") and len(answer) > 2),
         "lesson_id": lesson_id,
         "nudge": answer,
-        "why":  why 
+        "why": why,
+        "sentence": sentence
     }
 
-_EMPTY = {"should_nudge": False, "lesson_id": None, "nudge": None, "why": None}
-
-
+_EMPTY = {"should_nudge": False, "lesson_id": None, "nudge": None, "why": None, "sentence": None}
 
 def _parse_ollama(response: str) -> dict:
     print(f"DEBUG: Raw response: '{response}'")
@@ -24,28 +23,36 @@ def _parse_ollama(response: str) -> dict:
 
     raw = response.strip()
 
-    # Extract JSON object only
+    # Strip markdown code blocks (```json ... ``` or ``` ... ```)
+    raw = re.sub(r'^```(?:json)?\s*\n?', '', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'\n?```\s*$', '', raw)
+    raw = raw.strip()
+
+    # Extract JSON object
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if match:
         raw = match.group(0)
 
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError:
-        print("Invalid JSON from Ollama:", raw)
+    except json.JSONDecodeError as e:
+        print(f"Invalid JSON from LLM: {raw}")
+        print(f"JSON Error: {e}")
         return _EMPTY
 
     answer = data.get("answer")
+    lesson_id = data.get("lesson_id")
+    why = data.get("why")
+    sentence = data.get("sentence")
 
-    # HARD GUARD: answer must be single word or None
-    if not answer or not isinstance(answer, str) or " " in answer:
-        answer = None
+    # Handle null/None values from LLM
+    if answer is None or (isinstance(answer, str) and answer.upper() in ("NULL", "NONE")):
+        return _EMPTY
 
-    return _result(
-        answer,
-        data.get("lesson_id") if answer else None,
-        data.get("why") if answer else None
-    )
+    if not isinstance(answer, str):
+        answer = str(answer)
+
+    return _result(answer, lesson_id, why, sentence)
 
 def ask_ollama(transcript: str) -> dict:
     # Use generate instead of chat to simplify the request structure
@@ -84,7 +91,8 @@ def ask_gemini(transcript: str) -> dict:
     return _result(
         data.get("answer", ""),
         data.get("lesson_id"),
-        data.get("why")
+        data.get("why"),
+        data.get("sentence")
     )
 
 def ask_llm(transcript: str) -> dict:

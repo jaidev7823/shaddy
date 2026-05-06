@@ -120,7 +120,7 @@ async def process_audio_file(file: UploadFile = File(...)):
         audio_generated = False
         if llm_result.get("should_nudge") and llm_result.get("nudge"):
             nudge_text = llm_result["nudge"] + " WHY: " + (llm_result.get("why") or "")
-            audio_generated = tts_service.speak(nudge_text)
+            audio_generated = await tts_service.speak(nudge_text)
 
         return AudioProcessingResponse(
             transcript=text,

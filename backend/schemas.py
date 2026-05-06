@@ -10,15 +10,14 @@ class TranscriptionRequest(BaseModel):
 
     text: str = Field(..., min_length=1, description="Text to transcribe")
 
-
 class LLMResponse(BaseModel):
     """LLM processing response."""
 
     should_nudge: bool = Field(..., description="Whether to provide a nudge")
     lesson_id: Optional[str] = Field(None, description="Lesson ID if applicable")
-    nudge: Optional[str] = Field(None, description="The nudge message")
-    why: Optional[str] = Field(None, description="Explanation for the nudge")
-
+    answer: Optional[str] = Field(None, description="Single vocabulary word")
+    sentence: Optional[str] = Field(None, description="Natural reply using the word")
+    why: Optional[str] = Field(None, description="Short reason for selection")
 
 class AudioProcessingResponse(BaseModel):
     """Full audio processing response."""
