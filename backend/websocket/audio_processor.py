@@ -1,4 +1,3 @@
-import base64
 import numpy as np
 import torch
 import torchaudio
@@ -10,15 +9,22 @@ class AudioProcessor:
         self.resamplers = {}
         self.target_rate = 16000
     
-    def process_chunk(self, audio_b64: str, sample_rate: int = 16000) -> Tuple[Optional[dict], Optional[str]]:
-        """Process an audio chunk. Returns (result, error_message)"""
-        if not audio_b64:
+    def process_chunk(self, audio_data, sample_rate: int = 16000) -> Tuple[Optional[dict], Optional[str]]:
+        """Process an audio chunk. Accepts raw bytes or base64 string for backward compatibility.
+        Returns (result, error_message)"""
+        if not audio_data:
             return None, "No audio data in chunk"
         
-        try:
-            audio_bytes = base64.b64decode(audio_b64)
-        except Exception as e:
-            return None, f"Base64 decode failed: {str(e)}"
+        # Handle both raw bytes and base64 strings (for backward compatibility)
+        if isinstance(audio_data, bytes):
+            audio_bytes = audio_data
+        else:
+            # Assume it's base64 encoded
+            try:
+                import base64
+                audio_bytes = base64.b64decode(audio_data)
+            except Exception as e:
+                return None, f"Base64 decode failed: {str(e)}"
         
         if len(audio_bytes) % 2 != 0:
             audio_bytes = audio_bytes[:-1]

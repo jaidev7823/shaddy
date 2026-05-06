@@ -1,7 +1,6 @@
 import wave
 from io import BytesIO
 from piper import PiperVoice
-import numpy as np
 
 class TTSService:
     def __init__(self):
@@ -9,14 +8,21 @@ class TTSService:
         self.voice = PiperVoice.load(self.model_path)
 
         self.output_path = "/tmp/tts_output.wav"
+        
+        # Prewarm the Piper model to avoid first-call latency
+        try:
+            list(self.voice.synthesize("test"))
+            print("✅ Piper model prewarmed successfully")
+        except Exception as e:
+            print(f"⚠️ Piper prewarm failed: {e}")
 
     async def stream_audio(self, text: str):
         """Yields raw PCM audio chunks (Int16) as they are generated."""
         try:
             # Piper's synthesize() returns a generator of AudioChunk objects
             # Each AudioChunk has audio_int16_bytes attribute with raw PCM data
-            # We yield smaller chunks for better streaming performance
-            chunk_size = 4096  # bytes per chunk (2048 Int16 samples)
+            # Increased chunk size for smoother playback and fewer websocket frames
+            chunk_size = 16384  # bytes per chunk (8192 Int16 samples)
             
             for audio_chunk in self.voice.synthesize(text):
                 if not audio_chunk or not hasattr(audio_chunk, 'audio_int16_bytes'):
@@ -26,7 +32,7 @@ class TTSService:
                 if not pcm_bytes:
                     continue
                 
-                # Split large chunks into smaller ones for streaming
+                # Split large chunks into larger ones for streaming
                 for i in range(0, len(pcm_bytes), chunk_size):
                     yield pcm_bytes[i:i+chunk_size]
         except Exception as e:

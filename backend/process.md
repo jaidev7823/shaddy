@@ -150,7 +150,7 @@ Check silence duration...
 
 ### Step 4: Silence Threshold Check (`TRIGGER_LIMIT = 800 // 32 = 25 frames`)
 ```python
-if state.silence_frames > TRIGGER_LIMIT:
+if state.silence_frames > 1:
     # End of utterance detected
     await websocket.send_json(processing_status())
     full_audio = b"".join(state.buf)
