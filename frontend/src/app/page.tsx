@@ -4,6 +4,48 @@ import { useEffect, useState, useRef } from "react";
 console.log(navigator.mediaDevices)
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://192.168.0.105:8000";
 console.log(WS_URL)
+
+// Helper function to convert base64 string to ArrayBuffer
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binaryString = window.atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+// Helper function to play audio from ArrayBuffer
+function playAudio(arrayBuffer: ArrayBuffer, format: string = "wav") {
+  try {
+    // Create audio context
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // Decode audio data
+    audioContext.decodeAudioData(arrayBuffer, (decodedData) => {
+      // Create buffer source
+      const source = audioContext.createBufferSource();
+      source.buffer = decodedData;
+      
+      // Connect to destination (speakers)
+      source.connect(audioContext.destination);
+      
+      // Play audio
+      source.start(0);
+      
+      // Clean up after playback ends
+      source.onended = () => {
+        audioContext.close();
+      };
+    }, (error) => {
+      console.error("Error decoding audio data:", error);
+    });
+  } catch (error) {
+    console.error("Error playing audio:", error);
+  }
+}
+
 interface AudioMessage {
   type: "audio_chunk" | "ping" | "close";
   data?: {
@@ -50,79 +92,109 @@ function floatTo16BitPCM(input: Float32Array) {
   return output;
 }
 
-// Add this helper function outside your component
-async function startRecording() {
-  setError(null);
-  setStatus("Initializing...");
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio:{
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,  // this boosts low volume automatically
-        channelCount: 1
-      } 
-    });
-    // Force 16kHz to match your backend VAD/Whisper models
-    const audioContext = new AudioContext(); 
-    const source = audioContext.createMediaStreamSource(stream);
-    
-    // 4096 samples at 16kHz is ~250ms of audio per chunk
-    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+    // Add this helper function outside your component
+    async function startRecording() {
+        setError(null);
+        setStatus("Initializing...");
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio:{
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,  // this boosts low volume automatically
+                channelCount: 1
+            } 
+            });
+            // Force 16kHz to match your backend VAD/Whisper models
+            const audioContext = new AudioContext(); 
+            const source = audioContext.createMediaStreamSource(stream);
+            
+            // 4096 samples at 16kHz is ~250ms of audio per chunk
+            const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-    console.log("clicked")
-    const ws = new WebSocket(`${WS_URL}/ws/audio`);
-    webSocketRef.current = ws;
+            console.log("clicked")
+            const ws = new WebSocket(`${WS_URL}/ws/audio`);
+            webSocketRef.current = ws;
 
-    ws.onopen = () => {
-      setStatus("Connected & Streaming");
-      console.log("WebSocket opened successfully");
-    };
+            ws.onopen = () => {
+                setStatus("Connected & Streaming");
+                console.log("WebSocket opened successfully");
+            };
 
-    processor.onaudioprocess = (e) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        const inputData = e.inputBuffer.getChannelData(0);
-        const pcm16 = floatTo16BitPCM(inputData);
-        
-        // Convert Int16Array to Base64
-        const uint8View = new Uint8Array(pcm16.buffer);
-        let binary = "";
-        for (let i = 0; i < uint8View.byteLength; i++) {
-          binary += String.fromCharCode(uint8View[i]);
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Received message:', data);
+                    
+                    // Handle audio data in response
+                    if (data.type === "response" && data.data?.audio_data) {
+                        // Decode base64 audio data and play it
+                        const audioBytes = base64ToArrayBuffer(data.data.audio_data);
+                        playAudio(audioBytes, data.data.audio_format || "wav");
+                        
+                        // Update UI with response data
+                        setResponse(data);
+                        setTranscript(data.data.transcript || "");
+                        setLLMResponse(data.data.llm_response || null);
+                    } else {
+                        // Handle other message types
+                        setResponse(data);
+                        if (data.type === "transcribed" && data.data?.text) {
+                            setTranscript(data.data.text);
+                        }
+                        if (data.data?.llm_response) {
+                            setLLMResponse(data.data.llm_response);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error processing WebSocket message:", error);
+                }
+            };
+
+            processor.onaudioprocess = (e) => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    const pcm16 = floatTo16BitPCM(inputData);
+                    
+                    // Convert Int16Array to Base64
+                    const uint8View = new Uint8Array(pcm16.buffer);
+                    let binary = "";
+                    for (let i = 0; i < uint8View.byteLength; i++) {
+                        binary += String.fromCharCode(uint8View[i]);
+                    }
+                    const base64Audio = btoa(binary);
+
+                    ws.send(JSON.stringify({
+                        type: "audio_chunk",
+                        data: {
+                            audio: base64Audio,
+                            sample_rate: audioContext.sampleRate
+                        }
+                    }));
+                }
+            };
+
+            source.connect(processor);
+            
+            // Create a silent gain node to keep the processor alive without feedback
+            const silentGain = audioContext.createGain();
+            silentGain.gain.value = 0;
+            processor.connect(silentGain);
+            silentGain.connect(audioContext.destination);
+
+            // Keep references for cleanup
+            (window as any).audioStream = stream;
+            (window as any).audioContext = audioContext;
+            (window as any).audioProcessor = processor;
+
+            setIsRecording(true);
+            setStatus("Recording...");
+
+        } catch (err: any) {
+            console.error("Recording error:", err);
+            setError(err.message || "Could not start recording");
+            setStatus("Error");
         }
-        const base64Audio = btoa(binary);
-
-        ws.send(JSON.stringify({
-          type: "audio_chunk",
-          data: {
-            audio: base64Audio,
-            sample_rate: audioContext.sampleRate
-          }
-        }));
-      }
-    };
-
-    source.connect(processor);
-    
-    // Create a silent gain node to keep the processor alive without feedback
-    const silentGain = audioContext.createGain();
-    silentGain.gain.value = 0;
-    processor.connect(silentGain);
-    silentGain.connect(audioContext.destination);
-
-    // Keep references for cleanup
-    (window as any).audioStream = stream;
-    (window as any).audioContext = audioContext;
-    (window as any).audioProcessor = processor;
-    
-    setIsRecording(true);
-    setStatus("Recording...");
-
-  } catch (err: any) {
-    console.error("Recording error:", err);
-    setError(err.message || "Could not start recording");
-    setStatus("Error");
-  }
-} // <--- This was likely the missing brace causing the semicolon error
+    } // <--- This was likely the missing brace causing the semicolon error
 
   function stopRecording() {
     if (mediaRecorderRef.current) {

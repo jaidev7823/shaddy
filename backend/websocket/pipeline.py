@@ -1,5 +1,6 @@
 import time
 import logging
+import base64
 from typing import Optional, Dict, Any
 from backend.websocket.cooldown import cooldown_manager
 from backend.services.vad_service import save_audio_separately
@@ -108,8 +109,22 @@ class Pipeline:
                 # result["nudge_text"] = f"{nudge}." 
                 
                 t = time.perf_counter()
-                result["audio_generated"] = await self.tts_service.speak(result["nudge_text"])
+                audio_bytes = await self.tts_service.generate_audio(result["nudge_text"])
                 times["tts"] = round(time.perf_counter() - t, 3)
+                
+                if audio_bytes:
+                    result["audio_generated"] = True
+                    # Save to output_path for the /audio/generated endpoint (backward compatibility)
+                    with open(self.tts_service.output_path, "wb") as f:
+                        f.write(audio_bytes)
+                    
+                    # Encode audio bytes as base64 for WebSocket transmission
+                    import base64
+                    response_data["audio_data"] = base64.b64encode(audio_bytes).decode('utf-8')
+                    response_data["audio_format"] = "wav"
+                else:
+                    result["audio_generated"] = False
+                
                 response_data["audio_generated"] = result["audio_generated"]
 
             # Finalize
