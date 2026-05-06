@@ -112,7 +112,7 @@ function floatTo16BitPCM(input: Float32Array) {
             const stream = await navigator.mediaDevices.getUserMedia({ audio:{
                 echoCancellation: true,
                 noiseSuppression: true,
-                autoGainControl: true,  // this boosts low volume automatically
+                autoGainControl: false,  // disabled to prevent audio level inconsistencies
                 channelCount: 1
             } 
             });
@@ -120,7 +120,7 @@ function floatTo16BitPCM(input: Float32Array) {
             const audioContext = new AudioContext(); 
             const source = audioContext.createMediaStreamSource(stream);
             
-            // 1024 samples at 16kHz is ~64ms of audio per chunk - lower latency
+            // 1024 samples at mic rate is ~64ms of audio per chunk - lower latency
             const processor = audioContext.createScriptProcessor(1024, 1, 1);
 
             console.log("clicked")
@@ -132,6 +132,12 @@ function floatTo16BitPCM(input: Float32Array) {
                 console.log("WebSocket opened successfully");
                 // Set binary type to arraybuffer for easier handling
                 ws.binaryType = 'arraybuffer';
+                
+                // Send the actual microphone sample rate to backend
+                ws.send(JSON.stringify({
+                    type: "config",
+                    sampleRate: audioContext.sampleRate
+                }));
             };
 
             ws.onmessage = async (event) => {

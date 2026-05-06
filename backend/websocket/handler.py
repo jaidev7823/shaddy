@@ -64,6 +64,11 @@ async def websocket_audio_stream(
                 elif msg_type == "close":
                     await websocket.send_json(closing_status())
                     break
+                elif msg_type == "config":
+                    # Store client sample rate for proper resampling
+                    client_sample_rate = data.get("sampleRate", 48000)
+                    state.client_sample_rate = client_sample_rate
+                    print(f"Client sample rate: {client_sample_rate}Hz")
                 else:
                     await websocket.send_json(generic_error(f"Unknown message type: {msg_type}"))
             else:
@@ -85,7 +90,8 @@ async def handle_audio_chunk(websocket, data, state, audio_processor, pipeline, 
     """Handle JSON audio_chunk messages (legacy support with base64)."""
     audio_data = data.get("data", {})
     audio_b64 = audio_data.get("audio")
-    sample_rate = audio_data.get("sample_rate", 16000)
+    # Use client sample rate from state, fallback to provided or default
+    sample_rate = data.get("sample_rate", state.client_sample_rate)
     
     chunk_result, error = audio_processor.process_chunk(audio_b64, sample_rate)
     if error:
@@ -101,6 +107,46 @@ async def handle_audio_chunk(websocket, data, state, audio_processor, pipeline, 
             print("New speech detected while processing - starting new utterance")
             state.cancel_current = True
             state.reset()
+        
+        state.buf.append(audio_bytes)
+        state.speech_frames += 1
+        state.silence_frames = 0
+        state.active = True
+        print("user talking")
+        state.last_speech_time = time.time()
+        await websocket.send_json(listening_status(speech_prob))
+    
+    elif state.active:
+        state.buf.append(audio_bytes)
+        state.silence_frames += 1
+        now = time.time()
+        
+        if state.last_speech_time is None:
+            state.last_speech_time = now
+        
+        silence_duration = now - state.last_speech_time
+        print(f"Silence duration: {silence_duration:.2f}s | frames: {state.silence_frames}")
+        
+        # Use time-based silence detection - 0.7 seconds
+        if silence_duration > 0.7:
+            print("Silence threshold reached (0.7s)")
+            
+            if state.speech_frames > 0.5:
+                await websocket.send_json(processing_status())
+                full_audio = b"".join(state.buf)
+                
+                # Reset state immediately to allow new audio capture
+                state.reset()
+                
+                # Process utterance in background
+                task = asyncio.create_task(
+                    process_and_respond(websocket, pipeline, full_audio, state)
+                )
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+            else:
+                print("Ignored short speech")
+                state.reset()
         
         state.buf.append(audio_bytes)
         state.speech_frames += 1
@@ -144,7 +190,8 @@ async def handle_audio_chunk(websocket, data, state, audio_processor, pipeline, 
 
 async def handle_binary_audio(websocket, audio_bytes, state, audio_processor, pipeline, background_tasks):
     """Handle raw binary audio data from WebSocket."""
-    chunk_result, error = audio_processor.process_chunk(audio_bytes, 16000)
+    # Pass raw bytes and client sample rate to audio processor for resampling
+    chunk_result, error = audio_processor.process_chunk(audio_bytes, state.client_sample_rate)
     if error:
         await websocket.send_json(generic_error(error))
         return

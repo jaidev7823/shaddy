@@ -1,5 +1,6 @@
 class SessionState:
     def __init__(self):
+        self.client_sample_rate = 48000  # default fallback
         self.reset()
     
     def reset(self):
