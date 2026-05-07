@@ -128,7 +128,7 @@ async def handle_audio_chunk(websocket, data, state, audio_processor, pipeline, 
         print(f"Silence duration: {silence_duration:.2f}s | frames: {state.silence_frames}")
         
         # Use time-based silence detection - 0.7 seconds
-        if silence_duration > 0.7:
+        if silence_duration > 0.3:
             print("Silence threshold reached (0.7s)")
             
             if state.speech_frames > 0.5:
