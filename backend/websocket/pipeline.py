@@ -103,9 +103,10 @@ class Pipeline:
             # 6. TTS Generation
             result["should_nudge"] = llm_res.get("should_nudge", False)
             nudge = llm_res.get("nudge")
-
+            print(nudge)
             if result["should_nudge"] and nudge:
-                result["nudge_text"] = f"{nudge}. say something like: {llm_res.get('sentence', '')}, because: {llm_res.get('why', '')}"
+                # result["nudge_text"] = f"{nudge}. say something like: {llm_res.get('sentence', '')}, because: {llm_res.get('why', '')}"
+                result["nudge_text"] = f"{nudge}"
                 # Store the text in response_data so the WebSocket can read it
                 response_data["nudge"] = result["nudge_text"]
                 result["audio_generated"] = True
