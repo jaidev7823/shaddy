@@ -2,48 +2,34 @@ from backend.config import get_lessons
 
 def build_prompt(transcript: str) -> str:
     lessons = get_lessons()
-    word = "\n".join(f'{l["id"]}: {l["topic"]}' for l in lessons)
+    words = [l["topic"] for l in lessons]
+    words_str = ", ".join(words)
+    
+    return f"""You are a silent vocabulary spotter. Your default answer is null.
 
-    return f"""You are a silent vocabulary spotter.
-
-Today's user wants to learn:
-{word}
+Today's words: {words_str}
 
 Someone just said: "{transcript}"
 
-Can the student naturally use one of today's words in their reply?
+ONLY return a word if this is GENUINELY a natural moment to use it.
+Most inputs should return null. Silence is better than a forced suggestion.
 
-If YES — return JSON with:
-- the word
-- a short natural sentence using that word
-- a short reason
+Ask yourself: "Would a native English speaker actually use this word 
+in a reply to what was just said?" If any doubt — return null.
 
-If NO — return JSON with nulls.
+GOOD moment to trigger:
+Input: "What did you think of the movie?"
+Word: entertainment
+Trigger: YES — movie is literally entertainment
 
-STRICT Rules:
-- answer must be ONE word from today's list or null
-- sentence must be a short natural reply using that word
-- why must be short (few words only)
-- If answer is null → sentence and why must also be null
-- No explanation outside JSON
-- If not 100% sure → return null
-- Do not force usage
-- The sentence MUST contain the exact answer word (case-insensitive)
-- If the word is not present → return null for all fields
+BAD moment — return null:
+Input: "This is how it works"
+Word: pragmatic  
+Trigger: NO — pragmatic doesn't naturally fit here
 
-BAD:
-answer: "Pragmatic"
-sentence: "I try to be practical."
-→ INVALID (word missing)
+Input: "Can you pass the water?"
+Word: resilient
+Trigger: NO — nothing connects
 
-GOOD:
-answer: "Pragmatic"
-sentence: "I'm pragmatic about my friendships."
-
-### OUTPUT — valid JSON only:
-{{
-  "lesson_id": "string or null",
-  "answer": "string or null",
-  "sentence": "string or null",
-  "why": "string or null"
-}}"""
+### OUTPUT — valid JSON only, no explanation:
+{{"lesson_id": "string or null", "answer": "string or null", "sentence": "string or null", "why": "string or null"}}"""
